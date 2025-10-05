@@ -82,7 +82,7 @@ typedef union {
     int64_t  i64;
     double   f64;
     bool     b8;
-    cgguf_str_s string;
+    cgguf_str_s str;
     // TODO: arrays
 } cgguf_val_u;
 
