@@ -2,9 +2,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-
-#include <fcntl.h>
-#include <unistd.h>
+#include <stdlib.h>
 
 static void msg_(const char * fname, int line, const char * level, const char * fmt, ...) {
     fprintf(stderr, "%s:%d: %s: ", fname, line, level);
