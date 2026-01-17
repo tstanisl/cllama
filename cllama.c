@@ -2,15 +2,11 @@
 #include <stdlib.h>
 
 #include "cgguf.h"
+#include "cutils.h"
 
-#define ASSERT(...) \
-    if (__VA_ARGS__); \
-    else fprintf(stderr, "%s:%d: ASSERT: %s\n", \
-                         __FILE__, __LINE__, \
-                         # __VA_ARGS__), \
-         abort()
-
-int main(int argc, char * argv[]) {
+int main(int argc, char * argv[argc + 1]) {
+    if (ERR_ON(argc != 2, "Missing path to GGUF model"))
+        return -1;
     auto ctx = cgguf_open(argv[1]);
     ASSERT(ctx);
 }
