@@ -1,8 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-
-typedef struct cgguf * cgguf_h;
+#include <stdbool.h>
 
 enum cgguf_type {
     CGGUF_TYPE_F32     = 0,
@@ -86,8 +85,10 @@ typedef union {
     // TODO: arrays
 } cgguf_val_u;
 
+typedef struct cgguf * cgguf_h;
+
 cgguf_h cgguf_open(const char *fname);
-void ccgguf_close(cgguf_h);
+void cgguf_drop(cgguf_h);
 
 #define CGGUF_FOREACH_VALUE()
 // CGGUF_FOREACH_TENSOR

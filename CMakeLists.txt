@@ -6,9 +6,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CXX_FLAGS "-Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_C_FLAGS "-Wall -Wextra")
+set(CMAKE_C_FLAGS_DEBUG "-g -ggdb -fsanitize=address,undefined")
+set(CMAKE_C_FLAGS_RELEASE "-O3")
 
-add_executable(cllama cllama.c cgguf.c)
+add_library(cgguf SHARED cgguf.c)
 
+
+add_executable(cllama cllama.c)
+target_link_libraries(cllama cgguf)

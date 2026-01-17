@@ -60,3 +60,8 @@ fail:
     free(ctx);
     return 0;
 }
+
+void cgguf_drop(cgguf_s * ctx) {
+    munmap((void*)ctx->hdr, ctx->size);
+    free(ctx);
+}
