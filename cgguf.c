@@ -10,12 +10,14 @@ typedef struct {
     uint8_t  magic[4]; // `GGUF` encoded as 0x46554747
     uint32_t version; // should be at 3
     uint64_t tensor_count;
-    uint64_t value_count;
+    uint64_t keyval_count;
 } header_s;
 
 typedef struct cgguf {
     const header_s * hdr;
+    const void * tensors;
     size_t size;
+    size_t alignment;
 } cgguf_s;
 
 cgguf_s * cgguf_open(const char *fname) {
@@ -45,6 +47,8 @@ cgguf_s * cgguf_open(const char *fname) {
     if (ERR_ON(size <= sizeof *hdr, "File is too small"))
         goto fail;
     if (ERR_ON(memcmp(hdr, "GGUF", 4) != 0, "invalid magic"))
+        goto fail;
+    if (ERR_ON(hdr->version != 3, "invalid version"))
         goto fail;
 
     *ctx = (cgguf_s) { .hdr = hdr, .size = size };

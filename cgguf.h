@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-enum cgguf_type {
+typedef enum {
     CGGUF_TYPE_F32     = 0,
     CGGUF_TYPE_F16     = 1,
     CGGUF_TYPE_Q4_0    = 2,
@@ -45,9 +45,9 @@ enum cgguf_type {
     // CGGUF_TYPE_IQ4_NL_8_8 = 38,
     CGGUF_TYPE_MXFP4   = 39, // MXFP4 (1 block)
     CGGUF_TYPE_COUNT   = 40,
-};
+} cgguf_type_e;
 
-enum cgguf_value_type {
+typedef enum {
     CGGUF_VALUE_TYPE_UINT8 = 0,
     CGGUF_VALUE_TYPE_INT8 = 1,
     CGGUF_VALUE_TYPE_UINT16 = 2,
@@ -61,13 +61,20 @@ enum cgguf_value_type {
     CGGUF_VALUE_TYPE_UINT64 = 10,
     CGGUF_VALUE_TYPE_INT64 = 11,
     CGGUF_VALUE_TYPE_FLOAT64 = 12,
-};
+} cgguf_value_type_e;
+
+enum { CGGUF_MAX_DIMS = 4 };
 
 typedef struct {
     uint64_t len;
     // The string as a UTF-8 non-null-terminated string.
-    char string[/* len */];
+    char str[/* len */];
 } cgguf_str_s;
+
+typedef struct {
+    cgguf_value_type_e type;
+    uint64_t len;
+} cgguf_arr_s;
 
 typedef union {
     uint8_t  u8;
@@ -82,14 +89,45 @@ typedef union {
     double   f64;
     bool     b8;
     cgguf_str_s str;
-    // TODO: arrays
+    cgguf_arr_s arr;
 } cgguf_val_u;
+
 
 typedef struct cgguf * cgguf_h;
 
 cgguf_h cgguf_open(const char *fname);
 void cgguf_drop(cgguf_h);
 
-#define CGGUF_FOREACH_VALUE()
-// CGGUF_FOREACH_TENSOR
+// Key-Value helpers
+typedef struct {
+    const cgguf_str_s * key;
+    const cgguf_val_u * val;
+} cgguf_keyval_s;
+
+int cgguf_strcmp(const cgguf_str_s *, const char *);
+
+cgguf_keyval_s cgguf_keyval_start(cgguf_h);
+cgguf_keyval_s cgguf_keyval_next(cgguf_h, cgguf_keyval_s kv);
+
+#define CGGUF_FOREACH_KEYVAL(_h, _it) \
+    for (cgguf_keyval_s _it = cgguf_keyval_start(_h); \
+         _it.key;                                     \
+         _it = cgguf_keyval_next(_h, _it))            \
+
+// Tensor helpers
+
+typedef struct {
+    const cgguf_str_s * name;
+    void * data;
+    int64_t dims[CGGUF_MAX_DIMS];
+    cgguf_value_type_e type;
+} cgguf_tensor_s;
+
+cgguf_tensor_s cgguf_tensor_start(cgguf_h);
+cgguf_tensor_s cgguf_tensor_next(cgguf_h, cgguf_tensor_s kv);
+
+#define CGGUF_FOREACH_TENSOR(_h, _it) \
+    for (cgguf_tensor_s _it = cgguf_tensor_start(_h); \
+         _it.name;                                    \
+         _it = cgguf_tensor_next(_h, _it))            \
 
