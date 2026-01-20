@@ -104,6 +104,7 @@ static bool scan(cgguf_s * g, stream_s * s) {
                    "when parsing keyval[%zu]", i))
             return 0;
         // TODO: general.alignment
+        printf("kv[%zu]=%*.s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
     }
     return 1;
 }
@@ -151,8 +152,8 @@ cgguf_s * cgguf_open(const char *fname) {
         .data = data,
         .size = size,
         .alignment = 32,
-        .nkeyvals = hdr.ntensors,
-        .ntensors = hdr.nkeyvals,
+        .nkeyvals = hdr.nkeyvals,
+        .ntensors = hdr.ntensors,
     };
 
     if (!scan(ctx, &strm))
