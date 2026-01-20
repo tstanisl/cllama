@@ -13,12 +13,21 @@ static void msg_(const char * fname, int line, const char * level, const char * 
     fputc('\n', stderr);
 }
 
-#define ERR_ON(cnd, ...) \
-    (cnd ? msg_(__FILE__, __LINE__, "error", __VA_ARGS__), 1 : 0)
+#define ERR(...) msg_(__FILE__, __LINE__, "error", __VA_ARGS__)
+#define ERR_ON(cnd, ...) (cnd ? ERR(__VA_ARGS__), 1 : 0)
 #define ERRSTR strerror(errno)
 
 #define ASSERT(...) \
     if (__VA_ARGS__); \
     else (msg_(__FILE__, __LINE__, "assert", "%s", # __VA_ARGS__), abort())
 
-
+typedef uint64_t u64;
+typedef  int64_t i64;
+typedef uint32_t u32;
+typedef  int32_t i32;
+typedef uint16_t u16;
+typedef  int16_t i16;
+typedef  uint8_t u8;
+typedef   int8_t i8;
+typedef    float f32;
+typedef   double f64;

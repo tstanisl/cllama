@@ -104,7 +104,7 @@ typedef struct {
     const cgguf_val_u * val;
 } cgguf_keyval_s;
 
-int cgguf_strcmp(const cgguf_str_s *, const char *);
+int cgguf_strequal(const cgguf_str_s *, const char *);
 
 cgguf_keyval_s cgguf_keyval_start(cgguf_h);
 cgguf_keyval_s cgguf_keyval_next(cgguf_h, cgguf_keyval_s kv);
