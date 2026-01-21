@@ -15,7 +15,7 @@ typedef struct cgguf {
     u64 alignment;
     u64 nkeyvals;
     u64 ntensors;
-    const cgguf_str_s * keys[];
+    const void * keyval[];
 } cgguf_s;
 
 typedef struct {
@@ -97,14 +97,14 @@ static bool scan(cgguf_s * g, stream_s * s) {
     size_t kv_count = g->nkeyvals;
     cgguf_value_type_e vtype;
     for (size_t i = 0; i < kv_count; ++i) {
-        g->keys[i] = s->data;
+        g->keyval[i] = s->data;
         if (ERR_ON(!skip_str(s) ||
                    !fetch(s, &vtype) ||
                    !skip_val(s, vtype),
                    "when parsing keyval[%zu]", i))
             return 0;
         // TODO: general.alignment
-        printf("kv[%zu]=%*.s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
+        //printf("kv[%zu]=%.*s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
     }
     return 1;
 }
@@ -144,7 +144,7 @@ cgguf_s * cgguf_open(const char *fname) {
     if (ERR_ON(hdr.version != 3, "invalid version"))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + hdr.nkeyvals * sizeof *ctx->keys);
+    ctx = malloc(sizeof *ctx + hdr.nkeyvals * sizeof *ctx->keyval);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
 

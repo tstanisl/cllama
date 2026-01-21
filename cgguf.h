@@ -68,12 +68,13 @@ enum { CGGUF_MAX_DIMS = 4 };
 typedef struct {
     uint64_t len;
     // The string as a UTF-8 non-null-terminated string.
-    char str[/* len */];
+    const char * str;
 } cgguf_str_s;
 
 typedef struct {
     cgguf_value_type_e type;
     uint64_t len;
+    const void * val;
 } cgguf_arr_s;
 
 typedef union {
@@ -100,8 +101,8 @@ void cgguf_drop(cgguf_h);
 
 // Key-Value helpers
 typedef struct {
-    const cgguf_str_s * key;
-    const cgguf_val_u * val;
+    const cgguf_str_s key;
+    const cgguf_val_u val;
 } cgguf_keyval_s;
 
 int cgguf_strequal(const cgguf_str_s *, const char *);
