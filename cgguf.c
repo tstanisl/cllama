@@ -15,7 +15,7 @@ typedef struct cgguf {
     u64 alignment;
     u64 nkeyvals;
     u64 ntensors;
-    const void * keyval[];
+    const char * keyval[];
 } cgguf_s;
 
 typedef struct {
@@ -106,6 +106,7 @@ static bool scan(cgguf_s * g, stream_s * s) {
         // TODO: general.alignment
         //printf("kv[%zu]=%.*s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
     }
+    g->keyval[kv_count] = 0;
     return 1;
 }
 
@@ -136,15 +137,14 @@ cgguf_s * cgguf_open(const char *fname) {
     } hdr;
 
     stream_s strm = { .data = data, .left = size, .size = size };
-    if (!fetch(&strm, &hdr))
-        goto fail;
     // basic consitency checks for GGUF
-    if (ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic"))
-        goto fail;
-    if (ERR_ON(hdr.version != 3, "invalid version"))
+    if (!fetch(&strm, &hdr) ||
+        ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic") ||
+        ERR_ON(hdr.nkeyvals >= UINT64_MAX - 1, "nkeyvals is invalid") ||
+        ERR_ON(hdr.version != 3, "invalid version"))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + hdr.nkeyvals * sizeof *ctx->keyval);
+    ctx = malloc(sizeof *ctx + (hdr.nkeyvals + 1) * sizeof *ctx->keyval);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
 
@@ -181,9 +181,18 @@ int cgguf_strequal(const cgguf_str_s * a, const char * b) {
     size_t blen = strlen(b);
     return alen == blen && memcmp(a->str, b, alen) == 0;
 }
-#if 0
-cgguf_keyval_s cgguf_keyval_start(cgguf_s * c) {
-    r
-    return (unpack_keyval(c, c->hdr + 1);
+
+void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
+    if (g->nkeyvals > 0) {
+        u64 len;
+        memcpy(&len, g->keyval[0], sizeof len);
+        *kv = (cgguf_keyval_s) {    
+            .key.len = len,
+            .key.str = g->keyval[0] + sizeof len,
+        };
+    } else {
+        *kv = (cgguf_keyval_s) { 0 };
+    }
 }
-#endif
+void cgguf_keyval_cont(cgguf_s * g, cgguf_keyval_s * kv) {
+}

@@ -99,21 +99,22 @@ typedef struct cgguf * cgguf_h;
 cgguf_h cgguf_open(const char *fname);
 void cgguf_drop(cgguf_h);
 
-// Key-Value helpers
-typedef struct {
-    const cgguf_str_s key;
-    const cgguf_val_u val;
-} cgguf_keyval_s;
-
 int cgguf_strequal(const cgguf_str_s *, const char *);
 
-cgguf_keyval_s cgguf_keyval_start(cgguf_h);
-cgguf_keyval_s cgguf_keyval_next(cgguf_h, cgguf_keyval_s kv);
+// Key-Value helpers
+typedef struct {
+    cgguf_str_s key;
+    cgguf_val_u val;
+} cgguf_keyval_s;
+
+void cgguf_keyval_init(cgguf_h, cgguf_keyval_s * kv);
+void cgguf_keyval_cont(cgguf_h, cgguf_keyval_s * kv);
+void cgguf_keyval_read(cgguf_h, cgguf_keyval_s * kv);
 
 #define CGGUF_FOREACH_KEYVAL(_h, _it) \
-    for (cgguf_keyval_s _it = cgguf_keyval_start(_h); \
-         _it.key;                                     \
-         _it = cgguf_keyval_next(_h, _it))            \
+    for (cgguf_keyval_init(_h, &_it); \
+         _it.key.str;                 \
+         cgguf_keyval_cont(_h, &_it)) \
 
 // Tensor helpers
 
