@@ -101,22 +101,17 @@ void cgguf_drop(cgguf_h);
 
 int cgguf_strequal(const cgguf_str_s *, const char *);
 
-// Key-Value helpers
+typedef struct {
+    uint64_t alignment;
+    uint64_t nkeyvals;
+    uint64_t ntensors;
+} cgguf_params_s;
+
+// Key-Value and tensor helpers
 typedef struct {
     cgguf_str_s key;
     cgguf_val_u val;
 } cgguf_keyval_s;
-
-void cgguf_keyval_init(cgguf_h, cgguf_keyval_s * kv);
-void cgguf_keyval_cont(cgguf_h, cgguf_keyval_s * kv);
-void cgguf_keyval_read(cgguf_h, cgguf_keyval_s * kv);
-
-#define CGGUF_FOREACH_KEYVAL(_h, _it) \
-    for (cgguf_keyval_init(_h, &_it); \
-         _it.key.str;                 \
-         cgguf_keyval_cont(_h, &_it)) \
-
-// Tensor helpers
 
 typedef struct {
     const cgguf_str_s * name;
@@ -125,6 +120,22 @@ typedef struct {
     cgguf_value_type_e type;
 } cgguf_tensor_s;
 
+cgguf_params_s cgguf_params_get(cgguf_h);
+cgguf_keyval_s cgguf_keyval_get(cgguf_h, uint64_t);
+cgguf_tensor_s cgguf_tensor_get(cgguf_h, uint64_t);
+
+#if 0
+void cgguf_keyval_init(cgguf_h, cgguf_keyval_s * kv);
+void cgguf_keyval_cont(cgguf_h, cgguf_keyval_s * kv);
+void cgguf_keyval_read(cgguf_h, cgguf_keyval_s * kv);
+
+#define CGGUF_FOREACH_KEYVAL(_h, _it) \
+    for (cgguf_keyval_init(_h, &_it); \
+         _it.key.str;                 \
+         cgguf_keyval_cont(_h, &_it)) \
+// Tensor helpers
+
+
 cgguf_tensor_s cgguf_tensor_start(cgguf_h);
 cgguf_tensor_s cgguf_tensor_next(cgguf_h, cgguf_tensor_s kv);
 
@@ -132,4 +143,6 @@ cgguf_tensor_s cgguf_tensor_next(cgguf_h, cgguf_tensor_s kv);
     for (cgguf_tensor_s _it = cgguf_tensor_start(_h); \
          _it.name;                                    \
          _it = cgguf_tensor_next(_h, _it))            \
+
+#endif
 

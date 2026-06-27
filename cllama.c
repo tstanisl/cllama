@@ -7,10 +7,11 @@ int main(int argc, char * argv[argc + 1]) {
     cgguf_h ctx = cgguf_open(argv[1]);
     ASSERT(ctx);
 
+/*
     cgguf_keyval_s kv;
     CGGUF_FOREACH_KEYVAL(ctx, kv) {
         printf("key[%.*s]\n", (int)kv.key.len, kv.key.str);
     }
-
+*/
     cgguf_drop(ctx);
 }

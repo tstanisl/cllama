@@ -106,7 +106,6 @@ static bool scan(cgguf_s * g, stream_s * s) {
         // TODO: general.alignment
         //printf("kv[%zu]=%.*s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
     }
-    g->keyval[kv_count] = 0;
     return 1;
 }
 
@@ -137,14 +136,15 @@ cgguf_s * cgguf_open(const char *fname) {
     } hdr;
 
     stream_s strm = { .data = data, .left = size, .size = size };
+    const size_t max_nkeyvals = (SIZE_MAX - sizeof *ctx) / sizeof *ctx->keyval;
     // basic consitency checks for GGUF
     if (!fetch(&strm, &hdr) ||
         ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic") ||
-        ERR_ON(hdr.nkeyvals >= UINT64_MAX - 1, "nkeyvals is invalid") ||
+        ERR_ON(hdr.nkeyvals >= max_nkeyvals, "nkeyvals is invalid") ||
         ERR_ON(hdr.version != 3, "invalid version"))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + (hdr.nkeyvals + 1) * sizeof *ctx->keyval);
+    ctx = malloc(sizeof *ctx + hdr.nkeyvals * sizeof *ctx->keyval);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
 
@@ -182,11 +182,29 @@ int cgguf_strequal(const cgguf_str_s * a, const char * b) {
     return alen == blen && memcmp(a->str, b, alen) == 0;
 }
 
+cgguf_params_s cgguf_params_get(cgguf_s * ctx) {
+    return (cgguf_params_s) {
+        .alignment = ctx->alignment,
+        .nkeyvals  = ctx->nkeyvals,
+        .ntensors  = ctx->ntensors,
+    };
+}
+
+cgguf_keyval_s cgguf_keyval_get(cgguf_s * ctx, uint64_t idx) {
+    ASSERT(idx < ctx->nkeyvals);
+    cgguf_keyval_s kv;
+//    memcpy(&kv.key.len, data, sizeof kv.key.len);
+//    kv.key.str = g->keyval[idx] + sizeof kv.key.len;
+}
+
+cgguf_tensor_s cgguf_tensor_get(cgguf_h, uint64_t);
+
+#if 0
 void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
     if (g->nkeyvals > 0) {
         u64 len;
         memcpy(&len, g->keyval[0], sizeof len);
-        *kv = (cgguf_keyval_s) {    
+        *kv = (cgguf_keyval_s) {
             .key.len = len,
             .key.str = g->keyval[0] + sizeof len,
         };
@@ -196,3 +214,4 @@ void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
 }
 void cgguf_keyval_cont(cgguf_s * g, cgguf_keyval_s * kv) {
 }
+#endif
