@@ -103,8 +103,8 @@ int cgguf_strequal(const cgguf_str_s *, const char *);
 
 typedef struct {
     uint64_t alignment;
-    uint64_t nkeyvals;
-    uint64_t ntensors;
+    uint64_t n_keyvals;
+    uint64_t n_tensors;
 } cgguf_params_s;
 
 // Key-Value and tensor helpers

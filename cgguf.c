@@ -13,8 +13,8 @@ typedef struct cgguf {
     size_t size;
     const void * tensors;
     u64 alignment;
-    u64 nkeyvals;
-    u64 ntensors;
+    u64 n_keyvals;
+    u64 n_tensors;
     const char * keyval[];
 } cgguf_s;
 
@@ -94,7 +94,7 @@ static bool skip_val(stream_s * s, cgguf_value_type_e vtype) {
 }
 
 static bool scan(cgguf_s * g, stream_s * s) {
-    size_t kv_count = g->nkeyvals;
+    size_t kv_count = g->n_keyvals;
     cgguf_value_type_e vtype;
     for (size_t i = 0; i < kv_count; ++i) {
         g->keyval[i] = s->data;
@@ -131,20 +131,20 @@ cgguf_s * cgguf_open(const char *fname) {
     struct {
         u8  magic[4]; // `GGUF` encoded as 0x46554747
         u32 version; // should be at 3
-        u64 ntensors;
-        u64 nkeyvals;
+        u64 n_tensors;
+        u64 n_keyvals;
     } hdr;
 
     stream_s strm = { .data = data, .left = size, .size = size };
-    const size_t max_nkeyvals = (SIZE_MAX - sizeof *ctx) / sizeof *ctx->keyval;
+    const size_t max_n_keyvals = (SIZE_MAX - sizeof *ctx) / sizeof *ctx->keyval;
     // basic consitency checks for GGUF
     if (!fetch(&strm, &hdr) ||
         ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic") ||
-        ERR_ON(hdr.nkeyvals >= max_nkeyvals, "nkeyvals is invalid") ||
+        ERR_ON(hdr.n_keyvals >= max_n_keyvals, "n_keyvals is invalid") ||
         ERR_ON(hdr.version != 3, "invalid version"))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + hdr.nkeyvals * sizeof *ctx->keyval);
+    ctx = malloc(sizeof *ctx + hdr.n_keyvals * sizeof *ctx->keyval);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
 
@@ -152,8 +152,8 @@ cgguf_s * cgguf_open(const char *fname) {
         .data = data,
         .size = size,
         .alignment = 32,
-        .nkeyvals = hdr.nkeyvals,
-        .ntensors = hdr.ntensors,
+        .n_keyvals = hdr.n_keyvals,
+        .n_tensors = hdr.n_tensors,
     };
 
     if (!scan(ctx, &strm))
@@ -185,13 +185,13 @@ int cgguf_strequal(const cgguf_str_s * a, const char * b) {
 cgguf_params_s cgguf_params_get(cgguf_s * ctx) {
     return (cgguf_params_s) {
         .alignment = ctx->alignment,
-        .nkeyvals  = ctx->nkeyvals,
-        .ntensors  = ctx->ntensors,
+        .n_keyvals = ctx->n_keyvals,
+        .n_tensors = ctx->n_tensors,
     };
 }
 
 cgguf_keyval_s cgguf_keyval_get(cgguf_s * ctx, uint64_t idx) {
-    ASSERT(idx < ctx->nkeyvals);
+    ASSERT(idx < ctx->n_keyvals);
     cgguf_keyval_s kv;
 //    memcpy(&kv.key.len, data, sizeof kv.key.len);
 //    kv.key.str = g->keyval[idx] + sizeof kv.key.len;
@@ -201,7 +201,7 @@ cgguf_tensor_s cgguf_tensor_get(cgguf_h, uint64_t);
 
 #if 0
 void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
-    if (g->nkeyvals > 0) {
+    if (g->n_keyvals > 0) {
         u64 len;
         memcpy(&len, g->keyval[0], sizeof len);
         *kv = (cgguf_keyval_s) {
