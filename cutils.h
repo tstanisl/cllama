@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -31,3 +32,6 @@ typedef  uint8_t u8;
 typedef   int8_t i8;
 typedef    float f32;
 typedef   double f64;
+
+#define container_of(PTR, TYPE, MEMBER) \
+    ((TYPE*)((char*)(1 ? (PTR) : &((TYPE*)0)->MEMBER) - offsetof(TYPE, MEMBER)))

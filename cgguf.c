@@ -1,118 +1,142 @@
 #include "cgguf.h"
 #include "cutils.h"
 
+#include <assert.h>
+#include <inttypes.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-_Static_assert(sizeof(cgguf_value_type_e) == sizeof(u32), "invalid size");
-
-typedef struct cgguf {
-    char * data;
-    size_t size;
-    const void * tensors;
-    u64 alignment;
-    u64 n_keyvals;
-    u64 n_tensors;
-    const char * keyval[];
-} cgguf_s;
-
 typedef struct {
-    u64 size;
     u64 left;
-    void * data;
+    const char * data;
 } stream_s;
 
-static bool fetch_(stream_s * s, void * b, u64 size) {
-    if (s->left < size) {
-        ERR("failed to fetch %zu byte at offset %zu", size, s->size - s->left);
+static u64 type_size(cgguf_type_e type) {
+    switch (type) {
+    case CGGUF_TYPE_UINT8:   return 1;
+    case CGGUF_TYPE_INT8:    return 1;
+    case CGGUF_TYPE_UINT16:  return 2;
+    case CGGUF_TYPE_INT16:   return 2;
+    case CGGUF_TYPE_UINT32:  return 4;
+    case CGGUF_TYPE_INT32:   return 4;
+    case CGGUF_TYPE_FLOAT32: return 4;
+    case CGGUF_TYPE_BOOL:    return 1;
+    case CGGUF_TYPE_STRING:  return -1;
+    case CGGUF_TYPE_ARRAY:   return -1;
+    case CGGUF_TYPE_UINT64:  return 8;
+    case CGGUF_TYPE_INT64:   return 8;
+    case CGGUF_TYPE_FLOAT64: return 8;
+    default: return 0;
+    };
+}
+
+static bool scan_(stream_s * s, void * ptr, u64 size) {
+    if (ERR_ON(s->left < size, "file too short"))
         return 0;
-    }
-    if (b) memcpy(b, s->data, size);
+    if (ptr) memcpy(ptr, s->data, size);
     s->data = (char*)s->data + size;
     s->left -= size;
     return 1;
 }
 
-#define fetch(s,b) fetch_((s), (b), sizeof *(b))
+#define scan(s,p) scan_((s), (p), sizeof *(p))
+#define skip(s,n) scan_((s), 0, (n))
 
-static int fixed_vtype_size(cgguf_value_type_e type) {
-    switch (type) {
-    case CGGUF_VALUE_TYPE_BOOL:    return 1;
-    case CGGUF_VALUE_TYPE_UINT8:   return 1;
-    case CGGUF_VALUE_TYPE_INT8:    return 1;
-    case CGGUF_VALUE_TYPE_UINT16:  return 2;
-    case CGGUF_VALUE_TYPE_INT16:   return 2;
-    case CGGUF_VALUE_TYPE_UINT32:  return 4;
-    case CGGUF_VALUE_TYPE_INT32:   return 4;
-    case CGGUF_VALUE_TYPE_FLOAT32: return 4;
-    case CGGUF_VALUE_TYPE_UINT64:  return 8;
-    case CGGUF_VALUE_TYPE_INT64:   return 8;
-    case CGGUF_VALUE_TYPE_FLOAT64: return 8;
-    default: return 0;
-    };
-}
-
-static bool skip_str(stream_s * s) {
-    u64 len;
-    return fetch(s, &len) && fetch_(s, 0, len);
-}
-
-static bool skip_arr(stream_s * s) {
-    cgguf_value_type_e vtype;
-    u64 len;
-    if (!fetch(s, &vtype) || !fetch(s, &len))
+static bool scan_str(stream_s * s, cgguf_str_s * p) {
+    if (ERR_ON(!scan(s, &p->size), "scan"))
         return 0;
-    if (vtype == CGGUF_VALUE_TYPE_STRING) {
-        for (u64 i = 0; i < len; ++i)
-            if (!skip_str(s))
-                return 0;
-        return 1;
-    }
-    if (vtype == CGGUF_VALUE_TYPE_ARRAY) {
-        for (u64 i = 0; i < len; ++i)
-            if (!skip_arr(s))
-                return 0;
-        return 1;
-    }
-    int vtype_size = fixed_vtype_size(vtype);
-    if (ERR_ON(vtype_size <= 0, "unknown vtype"))
-        return 0;
-    return fetch_(s, 0, len * vtype_size);
+    p->data = s->data;
+    return skip(s, p->size);
 }
 
-static bool skip_val(stream_s * s, cgguf_value_type_e vtype) {
-    if (vtype == CGGUF_VALUE_TYPE_STRING)
-        return skip_str(s);
-    if (vtype == CGGUF_VALUE_TYPE_ARRAY)
-        return skip_arr(s);
-    int vtype_size = fixed_vtype_size(vtype);
-    if (ERR_ON(vtype_size <= 0, "unknown vtype"))
+static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
+    if (!scan(s, &a->type))
         return 0;
-    return fetch_(s, 0, vtype_size);
-}
-
-static bool scan(cgguf_s * g, stream_s * s) {
-    size_t kv_count = g->n_keyvals;
-    cgguf_value_type_e vtype;
-    for (size_t i = 0; i < kv_count; ++i) {
-        g->keyval[i] = s->data;
-        if (ERR_ON(!skip_str(s) ||
-                   !fetch(s, &vtype) ||
-                   !skip_val(s, vtype),
-                   "when parsing keyval[%zu]", i))
-            return 0;
-        // TODO: general.alignment
-        //printf("kv[%zu]=%.*s\n", i, (int)g->keys[i]->len, g->keys[i]->str);
-    }
+    u64 elem_size = type_size(a->type);
+    if (ERR_ON(elem_size == 0, "invalid type: %" PRIu32, a->type))
+        return 0;
+    if (!scan(s, &a->left))
+        return 0;
+    a->data = s->data;
     return 1;
 }
 
-cgguf_s * cgguf_open(const char *fname) {
-    cgguf_s * ctx = 0;
+static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
+    //printf("%s %d %d\n", __func__, (int)a->left, (int)a->type);
+    u64 elem_size = type_size(a->type);
+    assert(elem_size > 0);
+    // fixed element types
+    if (elem_size != (u64)-1)
+        return skip(s, elem_size * a->left); // safe?
+    if (a->type == CGGUF_TYPE_STRING) {
+        for (u64 i = 0; i < a->left; ++i) {
+            u64 slen;
+            if (!scan(s, &slen))
+                return 0;
+            if (!skip(s, slen))
+                return 0;
+        }
+        return 1;
+    } else {
+        assert(a->type == CGGUF_TYPE_ARRAY);
+        for (u64 i = 0, cnt = a->left; i < cnt; ++i) {
+            printf("i=%d\n", (int)i);
+            if (ERR_ON(scan_arr(s, a), "scan_arr"))
+                return 0;
+            if (ERR_ON(skip_arr(s, a), "skip_arr"))
+                return 0;
+        }
+        return 1;
+    }
+}
+
+static bool scan_val(stream_s * s,
+    cgguf_type_e type, cgguf_val_u * v
+) {
+    u64 size = type_size(type);
+    assert(size > 0);
+    if (size != (u64)-1)
+        return scan_(s, v, size);
+    if (type == CGGUF_TYPE_STRING)
+        return scan_str(s, &v->str);
+    assert(type == CGGUF_TYPE_ARRAY);
+    return scan_arr(s, &v->arr);
+}
+
+static bool scan_keyval(stream_s * s, cgguf_keyval_s * kv) {
+    if (!scan_str(s, &kv->key))
+        return 0;
+    u32 type;
+    if (!scan(s, &type))
+        return 0;
+    //printf("type=%d key=%.*s\n", (int)type, (int)kv->key.size, kv->key.data);
+    u64 size = type_size(type);
+    if (ERR_ON(size == 0, "invalid type: %" PRIu32, type))
+        return 0;
+    kv->type = (cgguf_type_e)type;
+    return scan_val(s, kv->type, &kv->val);
+}
+
+static bool scan_tensor(stream_s * s, cgguf_tensor_s * p) {
+    (void)s;
+    (void)p;
+    return 0;
+}
+
+typedef struct {
+    cgguf_s base;
+    char * data;
+    size_t size;
+} ctx_s;
+
+const cgguf_s * cgguf_open(const char *fname) {
     int fd = -1;
-    void * data = MAP_FAILED;
+    char * data = MAP_FAILED;
+    cgguf_keyval_s * keyvals = 0;
+    cgguf_tensor_s * tensors = 0;
+    ctx_s * ctx = 0;
 
     fd = open(fname, O_RDONLY);
     if (ERR_ON(fd < 0, "open: %s", ERRSTR))
@@ -128,6 +152,8 @@ cgguf_s * cgguf_open(const char *fname) {
     if (ERR_ON(data == MAP_FAILED, "mmap: %s", ERRSTR))
         goto fail;
 
+    stream_s s = { .left = size, .data = data };
+
     struct {
         u8  magic[4]; // `GGUF` encoded as 0x46554747
         u32 version; // should be at 3
@@ -135,83 +161,104 @@ cgguf_s * cgguf_open(const char *fname) {
         u64 n_keyvals;
     } hdr;
 
-    stream_s strm = { .data = data, .left = size, .size = size };
-    const size_t max_n_keyvals = (SIZE_MAX - sizeof *ctx) / sizeof *ctx->keyval;
-    // basic consitency checks for GGUF
-    if (!fetch(&strm, &hdr) ||
-        ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic") ||
-        ERR_ON(hdr.n_keyvals >= max_n_keyvals, "n_keyvals is invalid") ||
-        ERR_ON(hdr.version != 3, "invalid version"))
+    if (!scan(&s, &hdr))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + hdr.n_keyvals * sizeof *ctx->keyval);
+    if (ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf"))
+        goto fail;
+    if (ERR_ON(hdr.version != 3, "bad version"))
+        goto fail;
+
+    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
+    if (ERR_ON(!keyvals, "malloc"))
+        goto fail;
+
+    tensors = calloc(hdr.n_tensors, sizeof *tensors);
+    if (ERR_ON(!tensors, "malloc"))
+        goto fail;
+    
+    ctx = malloc(sizeof *ctx);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
 
-    *ctx = (cgguf_s) {
-        .data = data,
-        .size = size,
-        .alignment = 32,
-        .n_keyvals = hdr.n_keyvals,
-        .n_tensors = hdr.n_tensors,
-    };
+    u32 alignment = 32;
+    // scan key-value pairs
+    for (u64 i = 0; i < hdr.n_keyvals; ++i) {
+        cgguf_keyval_s * kv = &keyvals[i];
+        if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
+            goto fail;
+        if (kv->type == CGGUF_TYPE_ARRAY)
+            if (ERR_ON(!skip_arr(&s, &kv->val.arr), "skip_arr"))
+                goto fail;
+        if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
+            cgguf_strequal(kv->key, "general.alignment")
+        ) alignment = kv->val.u32;
+    }
+    
+    // scan tensors
+    for (u64 i = 0; i < hdr.n_tensors; ++i)
+        if (ERR_ON(!scan_tensor(&s, &tensors[i]),
+                   "scan_tensor %" SCNu64, i))
+            goto fail;
 
-    if (!scan(ctx, &strm))
-        goto fail;
+    // compute data offset
 
     // file descriptor is no longer needed
     close(fd);
 
-    return ctx;
+    // update tensors
+
+    *ctx = (ctx_s) {
+        .base = {
+            .alignment = alignment,
+            .n_keyvals = hdr.n_keyvals,
+            .keyvals = keyvals,
+            .n_tensors = hdr.n_tensors,
+            .tensors = tensors,
+        },
+        .data = data,
+        .size = size,
+    };
+
+    return &ctx->base;
 
 fail:
+    free(keyvals);
+    free(tensors);
+    free(ctx);
     if (data != MAP_FAILED) munmap(data, size);
     if (fd >= 0) close(fd);
-    free(ctx);
     return 0;
 }
 
-void cgguf_drop(cgguf_s * ctx) {
+void cgguf_drop(const cgguf_s * base) {
+    ctx_s * ctx = container_of(base, ctx_s, base);
     munmap((void*)ctx->data, ctx->size);
+    free((void*)ctx->base.keyvals);
+    free((void*)ctx->base.tensors);
     free(ctx);
 }
 
-int cgguf_strequal(const cgguf_str_s * a, const char * b) {
-    size_t alen = a->len;
-    size_t blen = strlen(b);
-    return alen == blen && memcmp(a->str, b, alen) == 0;
-}
-
-cgguf_params_s cgguf_params_get(cgguf_s * ctx) {
-    return (cgguf_params_s) {
-        .alignment = ctx->alignment,
-        .n_keyvals = ctx->n_keyvals,
-        .n_tensors = ctx->n_tensors,
-    };
-}
-
-cgguf_keyval_s cgguf_keyval_get(cgguf_s * ctx, uint64_t idx) {
-    ASSERT(idx < ctx->n_keyvals);
-    cgguf_keyval_s kv;
-//    memcpy(&kv.key.len, data, sizeof kv.key.len);
-//    kv.key.str = g->keyval[idx] + sizeof kv.key.len;
-}
-
-cgguf_tensor_s cgguf_tensor_get(cgguf_h, uint64_t);
-
-#if 0
-void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
-    if (g->n_keyvals > 0) {
-        u64 len;
-        memcpy(&len, g->keyval[0], sizeof len);
-        *kv = (cgguf_keyval_s) {
-            .key.len = len,
-            .key.str = g->keyval[0] + sizeof len,
-        };
-    } else {
-        *kv = (cgguf_keyval_s) { 0 };
+bool cgguf_read_val(cgguf_arr_s* a, cgguf_val_u* v) {
+    if (a->left) {
+        stream_s s = { .data = a->data, .left = -1 };
+        scan_val(&s, a->type, v);
+        a->left--;
+        a->data = s.data;
+        return 1;
     }
+    return 0;
 }
-void cgguf_keyval_cont(cgguf_s * g, cgguf_keyval_s * kv) {
+
+void cgguf_skip_arr(cgguf_arr_s* a) {
+    stream_s s = { .data = a->data, .left = -1 };
+    skip_arr(&s, a);
+    a->left = 0;
+    a->data = s.data;
 }
-#endif
+
+bool cgguf_strequal(cgguf_str_s a, const char * b) {
+    size_t alen = a.size;
+    size_t blen = strlen(b);
+    return alen == blen && memcmp(a.data, b, alen) == 0;
+}
