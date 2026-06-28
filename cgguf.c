@@ -11,11 +11,11 @@ _Static_assert(sizeof(cgguf_value_type_e) == sizeof(u32), "invalid size");
 typedef struct cgguf {
     char * data;
     size_t size;
-    const void * tensors;
     u64 alignment;
     u64 n_keyvals;
     u64 n_tensors;
-    const char * keyval[];
+    void ** tensors;
+    void ** keyvals;
 } cgguf_s;
 
 typedef struct {
@@ -97,7 +97,7 @@ static bool scan(cgguf_s * g, stream_s * s) {
     size_t kv_count = g->n_keyvals;
     cgguf_value_type_e vtype;
     for (size_t i = 0; i < kv_count; ++i) {
-        g->keyval[i] = s->data;
+        g->keyvals[i] = s->data;
         if (ERR_ON(!skip_str(s) ||
                    !fetch(s, &vtype) ||
                    !skip_val(s, vtype),
@@ -111,6 +111,8 @@ static bool scan(cgguf_s * g, stream_s * s) {
 
 cgguf_s * cgguf_open(const char *fname) {
     cgguf_s * ctx = 0;
+    void ** keyvals = 0;
+    void ** tensors = 0;
     int fd = -1;
     void * data = MAP_FAILED;
 
@@ -136,16 +138,17 @@ cgguf_s * cgguf_open(const char *fname) {
     } hdr;
 
     stream_s strm = { .data = data, .left = size, .size = size };
-    const size_t max_n_keyvals = (SIZE_MAX - sizeof *ctx) / sizeof *ctx->keyval;
     // basic consitency checks for GGUF
     if (!fetch(&strm, &hdr) ||
-        ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "invalid magic") ||
-        ERR_ON(hdr.n_keyvals >= max_n_keyvals, "n_keyvals is invalid") ||
-        ERR_ON(hdr.version != 3, "invalid version"))
+        ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf") ||
+        ERR_ON(hdr.version != 3, "bad version"))
         goto fail;
 
-    ctx = malloc(sizeof *ctx + hdr.n_keyvals * sizeof *ctx->keyval);
-    if (ERR_ON(!ctx, "malloc"))
+    ctx = malloc(sizeof *ctx);
+    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
+    tensors = calloc(hdr.n_tensors, sizeof *tensors);
+
+    if (ERR_ON(!ctx || !keyvals || !tensors, "malloc"))
         goto fail;
 
     *ctx = (cgguf_s) {
@@ -154,6 +157,8 @@ cgguf_s * cgguf_open(const char *fname) {
         .alignment = 32,
         .n_keyvals = hdr.n_keyvals,
         .n_tensors = hdr.n_tensors,
+        .tensors = tensors,
+        .keyvals = keyvals,
     };
 
     if (!scan(ctx, &strm))
@@ -165,14 +170,18 @@ cgguf_s * cgguf_open(const char *fname) {
     return ctx;
 
 fail:
+    free(keyvals);
+    free(tensors);
+    free(ctx);
     if (data != MAP_FAILED) munmap(data, size);
     if (fd >= 0) close(fd);
-    free(ctx);
     return 0;
 }
 
 void cgguf_drop(cgguf_s * ctx) {
     munmap((void*)ctx->data, ctx->size);
+    free(ctx->tensors);
+    free(ctx->keyvals);
     free(ctx);
 }
 

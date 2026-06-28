@@ -13,5 +13,11 @@ int main(int argc, char * argv[argc + 1]) {
         printf("key[%.*s]\n", (int)kv.key.len, kv.key.str);
     }
 */
+
+    cgguf_str_s key;
+    for (auto it = cgguf_iter(ctx); cgguf_peek(&it, &key, 0); cgguf_cont(&it)) {
+        printf("key[%.*s]\n", (int)key.len, key.str);
+    }
+
     cgguf_drop(ctx);
 }
