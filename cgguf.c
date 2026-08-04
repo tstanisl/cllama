@@ -11,12 +11,11 @@ _Static_assert(sizeof(cgguf_value_type_e) == sizeof(u32), "invalid size");
 typedef struct cgguf {
     char * data;
     size_t size;
-    u64 alignment;
-    u64 n_keyvals;
-    u64 n_tensors;
-    void ** tensors;
-    void ** keyvals;
+    uint64_t n_keyvals;
+    uint64_t n_tensors;
 } cgguf_s;
+
+#if 0 
 
 typedef struct {
     u64 size;
@@ -108,11 +107,10 @@ static bool scan(cgguf_s * g, stream_s * s) {
     }
     return 1;
 }
+#endif
 
 cgguf_s * cgguf_open(const char *fname) {
     cgguf_s * ctx = 0;
-    void ** keyvals = 0;
-    void ** tensors = 0;
     int fd = -1;
     void * data = MAP_FAILED;
 
@@ -135,34 +133,23 @@ cgguf_s * cgguf_open(const char *fname) {
         u32 version; // should be at 3
         u64 n_tensors;
         u64 n_keyvals;
-    } hdr;
+    } * hdr = data;
 
-    stream_s strm = { .data = data, .left = size, .size = size };
-    // basic consitency checks for GGUF
-    if (!fetch(&strm, &hdr) ||
-        ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf") ||
-        ERR_ON(hdr.version != 3, "bad version"))
+    if (ERR_ON(size < sizeof hdr, "file too small") ||
+        ERR_ON(memcmp(hdr->magic, "GGUF", 4) != 0, "not gguf") ||
+        ERR_ON(hdr->version != 3, "bad version"))
         goto fail;
 
     ctx = malloc(sizeof *ctx);
-    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
-    tensors = calloc(hdr.n_tensors, sizeof *tensors);
-
-    if (ERR_ON(!ctx || !keyvals || !tensors, "malloc"))
+    if (ERR_ON(!ctx, "malloc"))
         goto fail;
 
     *ctx = (cgguf_s) {
         .data = data,
         .size = size,
-        .alignment = 32,
         .n_keyvals = hdr.n_keyvals,
         .n_tensors = hdr.n_tensors,
-        .tensors = tensors,
-        .keyvals = keyvals,
     };
-
-    if (!scan(ctx, &strm))
-        goto fail;
 
     // file descriptor is no longer needed
     close(fd);
@@ -170,8 +157,6 @@ cgguf_s * cgguf_open(const char *fname) {
     return ctx;
 
 fail:
-    free(keyvals);
-    free(tensors);
     free(ctx);
     if (data != MAP_FAILED) munmap(data, size);
     if (fd >= 0) close(fd);
@@ -180,8 +165,6 @@ fail:
 
 void cgguf_drop(cgguf_s * ctx) {
     munmap((void*)ctx->data, ctx->size);
-    free(ctx->tensors);
-    free(ctx->keyvals);
     free(ctx);
 }
 
@@ -190,37 +173,3 @@ int cgguf_strequal(const cgguf_str_s * a, const char * b) {
     size_t blen = strlen(b);
     return alen == blen && memcmp(a->str, b, alen) == 0;
 }
-
-cgguf_params_s cgguf_params_get(cgguf_s * ctx) {
-    return (cgguf_params_s) {
-        .alignment = ctx->alignment,
-        .n_keyvals = ctx->n_keyvals,
-        .n_tensors = ctx->n_tensors,
-    };
-}
-
-cgguf_keyval_s cgguf_keyval_get(cgguf_s * ctx, uint64_t idx) {
-    ASSERT(idx < ctx->n_keyvals);
-    cgguf_keyval_s kv;
-//    memcpy(&kv.key.len, data, sizeof kv.key.len);
-//    kv.key.str = g->keyval[idx] + sizeof kv.key.len;
-}
-
-cgguf_tensor_s cgguf_tensor_get(cgguf_h, uint64_t);
-
-#if 0
-void cgguf_keyval_init(cgguf_s * g, cgguf_keyval_s * kv) {
-    if (g->n_keyvals > 0) {
-        u64 len;
-        memcpy(&len, g->keyval[0], sizeof len);
-        *kv = (cgguf_keyval_s) {
-            .key.len = len,
-            .key.str = g->keyval[0] + sizeof len,
-        };
-    } else {
-        *kv = (cgguf_keyval_s) { 0 };
-    }
-}
-void cgguf_keyval_cont(cgguf_s * g, cgguf_keyval_s * kv) {
-}
-#endif

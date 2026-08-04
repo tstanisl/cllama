@@ -47,7 +47,7 @@ typedef enum {
     // CGGUF_DFMT_IQ4_NL_8_8 = 38,
     CGGUF_DFMT_MXFP4   = 39, // MXFP4 (1 block)
     CGGUF_DFMT_COUNT   = 40,
-} cgguf_type_e;
+} cgguf_dfmt_e;
 
 typedef enum {
     CGGUF_TYPE_UINT8 = 0,
@@ -65,7 +65,7 @@ typedef enum {
     CGGUF_TYPE_FLOAT64 = 12,
     // Used to share tensor and key-val interfaces
     CGGUF_TYPE_TENSOR = 128,
-} cgguf_value_type_e;
+} cgguf_type_e;
 
 enum { CGGUF_MAX_DIMS = 4 };
 
@@ -76,7 +76,7 @@ typedef struct {
 } cgguf_str_s;
 
 typedef struct {
-    cgguf_value_type_e type;
+    cgguf_type_e type;
     uint64_t len;
 } cgguf_array_s;
 
@@ -88,37 +88,34 @@ typedef struct {
 } cgguf_tensor_s;
 
 typedef union {
-    cgguf_type_e type;
-    union {
-        uint8_t  u8;
-        int8_t   i8;
-        uint16_t u16;
-        int16_t  i16;
-        uint32_t u32;
-        int32_t  i32;
-        float    f32;
-        uint64_t u64;
-        int64_t  i64;
-        double   f64;
-        bool     b8;
-        cgguf_str_s str;
-        cgguf_array_s array;
-        cgguf_tensor_s tensor;
-    };
+    uint8_t  u8;
+    int8_t   i8;
+    uint16_t u16;
+    int16_t  i16;
+    uint32_t u32;
+    int32_t  i32;
+    float    f32;
+    uint64_t u64;
+    int64_t  i64;
+    double   f64;
+    bool     b8;
+    cgguf_str_s str;
+    cgguf_array_s array;
+    cgguf_tensor_s tensor;
 } cgguf_val_u;
 
-typedef struct cgguf_itr_s {
+typedef struct {
     uint64_t left;
     uint64_t priv[3];
-};
+} cgguf_iter_s;
 
-cgguf_h     cgguf_open(const char *fname);
-void        cgguf_drop(cgguf_h);
-cgguf_itr_s cgguf_iter(cgguf_h);
-_Bool       cgguf_peek(cgguf_itr_s *, cgguf_str_s*, cgguf_val_s*);
-_Bool       cgguf_fine(cgguf_itr_s *);
-void        cgguf_cont(cgguf_itr_s *);
-void        cgguf_nest(cgguf_itr_s *);
+cgguf_h      cgguf_open(const char *fname);
+void         cgguf_drop(cgguf_h);
+cgguf_iter_s cgguf_iter(cgguf_h);
+cgguf_type_e cgguf_peek(cgguf_iter_s*, cgguf_str_s*, cgguf_val_s*);
+_Bool        cgguf_fine(cgguf_iter_s*);
+void         cgguf_cont(cgguf_iter_s*);
+void         cgguf_nest(cgguf_iter_s*);
 
 // compare cgguf_str_s with 0-terminated string
 int cgguf_strequal(const cgguf_str_s *, const char *);
@@ -159,11 +156,14 @@ cgguf_tensor_s cgguf_tensor_next(cgguf_h, cgguf_tensor_s kv);
 auto h = cgguf_open(...);
 cgguf_str_s key;
 cgguf_val_s val;
-for (auto it = cgguf_iter(h); cgguf_peek(&it, &key, &val); cgguf_cont(&it)) {
-    if (val.type == CGGUF_TYPE_ARRAY) {
-        for (cgguf_nest(&it); cgguf_peek(&it, 0, &val); cgguf_cont(&it)) 
+for (auto it = cgguf_iter(h); it.left; cgguf_cont(&it)) {
+    auto type = cgguf_scan(&it, 0, &val);
+    if (type == CGGUF_TYPE_ARRAY) {
+        for (auto it = cgguf_nest(&it); cgguf_peek(&it, 0, &val); cgguf_cont(&it)) 
     }
 }
+
+for (auto it = cgguf_iter(h); it.left; cgguf_cont(&it)) {
 
 
 #endif
