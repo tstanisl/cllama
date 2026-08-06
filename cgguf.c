@@ -19,6 +19,190 @@ typedef struct {
     char * data;
 } stream_s;
 
+static u64 type_size(cgguf_value_type_e type) {
+    switch (type) {
+    case CGGUF_TYPE_UINT8:   return 1;
+    case CGGUF_TYPE_INT8:    return 1;
+    case CGGUF_TYPE_UINT16:  return 2;
+    case CGGUF_TYPE_INT16:   return 2;
+    case CGGUF_TYPE_UINT32:  return 4;
+    case CGGUF_TYPE_INT32:   return 4;
+    case CGGUF_TYPE_FLOAT32: return 4;
+    case CGGUF_TYPE_BOOL:    return 1;
+    case CGGUF_TYPE_STRING:  return -1;
+    case CGGUF_TYPE_ARRAY:   return -1;
+    case CGGUF_TYPE_UINT64:  return 8;
+    case CGGUF_TYPE_INT64:   return 8;
+    case CGGUF_TYPE_FLOAT64: return 8;
+    default: return 0;
+    };
+}
+
+static bool scan_(stream_s * s, void * p, u64 size) {
+    if (ERR_ON(s->left < size, "file too short"))
+        return 0;
+    if (p) memcpy(b, s->data, size);
+    s->data = (char*)s->data + size;
+    s->left -= size;
+    return 1;
+}
+
+#define scan(s,p) scan_((s), (p), sizeof *(p))
+#define skip(s,n) scan_((s), 0, (n))
+
+static bool scan_str(stream_s * s, cgguf_str_s * p) {
+    if (ERR_ON(!scan(s, &p->size), "scan"))
+        return 0;
+    p->data = s->data;
+    return skip(s, p->size);
+}
+
+static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
+    u32 type;
+    if (!scan(s, &type))
+        return 0;
+    u64 elem_size = type_size(type);
+    if (ERR_ON(elem_size == 0, "invalid type: %" PTRu32, type))
+        return 0;
+    if (!scan(s, &a->size))
+        return 0;
+    a->data = s->data;
+    return 1;
+}
+
+static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
+    
+    
+}
+
+static bool scan_val(stream * s,
+    cgguf_value_type_e type, cgguf_val_u * v
+) {
+    u64 size = type_size(type);
+    assert(size > 0);
+    if (size != -1)
+        return scan(s, v, size);
+    if (type == CGGUF_TYPE_STRING)
+        return scan_str(s, &v->str)
+    assert(type == CGGUF_TYPE_ARRAY);
+    return scan_arr(s, &v->arr) && skip_arr(s, &v->arr);
+}
+
+static bool scan_keyval(stream_s * s, cgguf_keyval_s * p) {
+    if (!scan_str(s, &p->key))
+        return 0;
+    u32 type;
+    if (!scan(s, &type))
+        return 0;
+    u64 size = type_size(type);
+    if (ERR_ON(size == 0, "invalid type: %" PTRu32, type))
+        return 0;
+    p->type = (cgguf_value_type_e)type;
+    return scan_val(s, p->type, &p->val);
+}
+
+cgguf_s * cgguf_open(const char *fname) {
+    int fd = -1;
+    char * data = MAP_FAILED;
+    cgguf_keyval_s * keyvals = 0;
+    cgguf_tensor_s * tensors = 0;
+    ctx_s * ctx = 0;
+
+    fd = open(fname, O_RDONLY);
+    if (ERR_ON(fd < 0, "open: %s", ERRSTR))
+        goto fail;
+
+    struct stat st;
+    int ret = fstat(fd, &st);
+    if (ERR_ON(ret, "fstat: %s", ERRSTR))
+        goto fail;
+    size_t size = st.st_size;
+
+    data = mmap(0, size, PROT_READ, MAP_SHARED, fd, 0);
+    if (ERR_ON(data == MAP_FAILED, "mmap: %s", ERRSTR))
+        goto fail;
+
+    stream_s s = { .left = size, .data = data };
+
+    struct {
+        u8  magic[4]; // `GGUF` encoded as 0x46554747
+        u32 version; // should be at 3
+        u64 n_tensors;
+        u64 n_keyvals;
+    } hdr;
+
+    if (!scan(&s, &hdr))
+        goto fail;
+
+    if (ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf"))
+        goto fail;
+    if (ERR_ON(hdr.version != 3, "bad version"))
+        goto fail;
+
+    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
+    if (ERR_ON(!keyvals, "malloc"))
+        goto fail;
+
+    tensors = calloc(hdr.n_tensors, sizeof *tensors);
+    if (ERR_ON(!tensors, "malloc"))
+        goto fail;
+    
+    ctx = malloc(sizeof *ctx);
+    if (ERR_ON(!ctx, "malloc"))
+        goto fail;
+
+    u32 alignment = 32;
+    // scan key-value pairs
+    for (u64 i = 0; i < hdr.n_keyvals; ++i) {
+        auto kv = &keyvals[i];
+        if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
+            goto fail;
+        if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
+            cgguf_strequal(kv->key, "general.alignment")
+        ) alignment = kv->val.u32;
+    }
+    
+    // scan tensors
+    for (u64 i = 0; i < hdr.n_tensors; ++i)
+        if (ERR_ON(!scan_tensor(&s, tensors[i]),
+                   "scan_tensor %" SCNu64, i))
+            goto fail;
+
+    // compute data offset
+    // update tensors
+
+    *ctx = (cgguf_s) {
+        .data = data,
+        .size = size,
+        .n_keyvals = hdr.n_keyvals,
+        .n_tensors = hdr.n_tensors,
+    };
+
+    // file descriptor is no longer needed
+    close(fd);
+
+    return ctx;
+
+fail:
+    free(keyvals);
+    free(tensors);
+    free(ctx);
+    if (data != MAP_FAILED) munmap(data, size);
+    if (fd >= 0) close(fd);
+    return 0;
+}
+
+void cgguf_drop(cgguf_s * ctx) {
+    munmap((void*)ctx->data, ctx->size);
+    free(ctx);
+}
+
+int cgguf_strequal(const cgguf_str_s * a, const char * b) {
+    size_t alen = a->size;
+    size_t blen = strlen(b);
+    return alen == blen && memcmp(a->str, b, alen) == 0;
+}
+
 #if 0 
 
 typedef struct {
@@ -26,19 +210,6 @@ typedef struct {
     u64 left;
     void * data;
 } stream_s;
-
-static bool fetch_(stream_s * s, void * b, u64 size) {
-    if (s->left < size) {
-        ERR("failed to fetch %zu byte at offset %zu", size, s->size - s->left);
-        return 0;
-    }
-    if (b) memcpy(b, s->data, size);
-    s->data = (char*)s->data + size;
-    s->left -= size;
-    return 1;
-}
-
-#define fetch(s,b) fetch_((s), (b), sizeof *(b))
 
 static int fixed_vtype_size(cgguf_value_type_e type) {
     switch (type) {
@@ -112,105 +283,3 @@ static bool scan(cgguf_s * g, stream_s * s) {
     return 1;
 }
 #endif
-
-cgguf_s * cgguf_open(const char *fname) {
-    int fd = -1;
-    char * data = MAP_FAILED;
-    cgguf_keyval_s * keyvals = 0;
-    cgguf_tensor_s * tensors = 0;
-    ctx_s * ctx = 0;
-
-    fd = open(fname, O_RDONLY);
-    if (ERR_ON(fd < 0, "open: %s", ERRSTR))
-        goto fail;
-
-    struct stat st;
-    int ret = fstat(fd, &st);
-    if (ERR_ON(ret, "fstat: %s", ERRSTR))
-        goto fail;
-    size_t size = st.st_size;
-
-    data = mmap(0, size, PROT_READ, MAP_SHARED, fd, 0);
-    if (ERR_ON(data == MAP_FAILED, "mmap: %s", ERRSTR))
-        goto fail;
-
-    stream_s s = { .left = size, .data = data };
-
-    struct {
-        u8  magic[4]; // `GGUF` encoded as 0x46554747
-        u32 version; // should be at 3
-        u64 n_tensors;
-        u64 n_keyvals;
-    } hdr;
-
-    if (!fetch(&s, &hdr))
-        goto fail;
-
-    if (ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf"))
-        goto fail;
-    if (ERR_ON(hdr.version != 3, "bad version"))
-        goto fail;
-
-    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
-    if (ERR_ON(!keyvals, "malloc"))
-        goto fail;
-
-    tensors = calloc(hdr.n_tensors, sizeof *tensors);
-    if (ERR_ON(!tensors, "malloc"))
-        goto fail;
-    
-    ctx = malloc(sizeof *ctx);
-    if (ERR_ON(!ctx, "malloc"))
-        goto fail;
-
-    u32 alignment = 32;
-    // scan key-value pairs
-    for (u64 i = 0; i < hdr.n_keyvals; ++i) {
-        auto kv = &keyvals[i];
-        if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
-            goto fail;
-        if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
-            cgguf_strequal(kv->key, "general.alignment")
-        ) alignment = kv->val.u32;
-    }
-    
-    // scan tensors
-    for (u64 i = 0; i < hdr.n_tensors; ++i)
-        if (ERR_ON(!scan_tensor(&s, tensors[i]),
-                   "scan_tensor %" SCNu64, i))
-            goto fail;
-
-    // compute data offset
-    // update tensors
-
-    *ctx = (cgguf_s) {
-        .data = data,
-        .size = size,
-        .n_keyvals = hdr.n_keyvals,
-        .n_tensors = hdr.n_tensors,
-    };
-
-    // file descriptor is no longer needed
-    close(fd);
-
-    return ctx;
-
-fail:
-    free(keyvals);
-    free(tensors);
-    free(ctx);
-    if (data != MAP_FAILED) munmap(data, size);
-    if (fd >= 0) close(fd);
-    return 0;
-}
-
-void cgguf_drop(cgguf_s * ctx) {
-    munmap((void*)ctx->data, ctx->size);
-    free(ctx);
-}
-
-int cgguf_strequal(const cgguf_str_s * a, const char * b) {
-    size_t alen = a->len;
-    size_t blen = strlen(b);
-    return alen == blen && memcmp(a->str, b, alen) == 0;
-}
