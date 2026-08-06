@@ -124,7 +124,7 @@ bool cgguf_read_val(cgguf_arr_s*, cgguf_val_u*);
 // Consume all values in array to obtain final `data` field
 void cgguf_skip_arr(cgguf_arr_s*);
 // compare cgguf_str_s with 0-terminated string
-bool cgguf_strequal(const cgguf_str_s *, const char *);
+bool cgguf_strequal(cgguf_str_s, const char *);
 
 #if 0
 

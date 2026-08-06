@@ -8,12 +8,16 @@
 
 _Static_assert(sizeof(cgguf_value_type_e) == sizeof(u32), "invalid size");
 
-typedef struct cgguf {
+typedef struct {
+    cgguf_s base;
     char * data;
     size_t size;
-    uint64_t n_keyvals;
-    uint64_t n_tensors;
-} cgguf_s;
+} ctx_s;
+
+typedef struct {
+    u64 left;
+    char * data;
+} stream_s;
 
 #if 0 
 
@@ -110,9 +114,11 @@ static bool scan(cgguf_s * g, stream_s * s) {
 #endif
 
 cgguf_s * cgguf_open(const char *fname) {
-    cgguf_s * ctx = 0;
     int fd = -1;
-    void * data = MAP_FAILED;
+    char * data = MAP_FAILED;
+    cgguf_keyval_s * keyvals = 0;
+    cgguf_tensor_s * tensors = 0;
+    ctx_s * ctx = 0;
 
     fd = open(fname, O_RDONLY);
     if (ERR_ON(fd < 0, "open: %s", ERRSTR))
@@ -128,21 +134,54 @@ cgguf_s * cgguf_open(const char *fname) {
     if (ERR_ON(data == MAP_FAILED, "mmap: %s", ERRSTR))
         goto fail;
 
+    stream_s s = { .left = size, .data = data };
+
     struct {
         u8  magic[4]; // `GGUF` encoded as 0x46554747
         u32 version; // should be at 3
         u64 n_tensors;
         u64 n_keyvals;
-    } * hdr = data;
+    } hdr;
 
-    if (ERR_ON(size < sizeof hdr, "file too small") ||
-        ERR_ON(memcmp(hdr->magic, "GGUF", 4) != 0, "not gguf") ||
-        ERR_ON(hdr->version != 3, "bad version"))
+    if (!fetch(&s, &hdr))
         goto fail;
 
+    if (ERR_ON(memcmp(hdr.magic, "GGUF", 4) != 0, "not gguf"))
+        goto fail;
+    if (ERR_ON(hdr.version != 3, "bad version"))
+        goto fail;
+
+    keyvals = calloc(hdr.n_keyvals, sizeof *keyvals);
+    if (ERR_ON(!keyvals, "malloc"))
+        goto fail;
+
+    tensors = calloc(hdr.n_tensors, sizeof *tensors);
+    if (ERR_ON(!tensors, "malloc"))
+        goto fail;
+    
     ctx = malloc(sizeof *ctx);
     if (ERR_ON(!ctx, "malloc"))
         goto fail;
+
+    u32 alignment = 32;
+    // scan key-value pairs
+    for (u64 i = 0; i < hdr.n_keyvals; ++i) {
+        auto kv = &keyvals[i];
+        if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
+            goto fail;
+        if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
+            cgguf_strequal(kv->key, "general.alignment")
+        ) alignment = kv->val.u32;
+    }
+    
+    // scan tensors
+    for (u64 i = 0; i < hdr.n_tensors; ++i)
+        if (ERR_ON(!scan_tensor(&s, tensors[i]),
+                   "scan_tensor %" SCNu64, i))
+            goto fail;
+
+    // compute data offset
+    // update tensors
 
     *ctx = (cgguf_s) {
         .data = data,
@@ -157,6 +196,8 @@ cgguf_s * cgguf_open(const char *fname) {
     return ctx;
 
 fail:
+    free(keyvals);
+    free(tensors);
     free(ctx);
     if (data != MAP_FAILED) munmap(data, size);
     if (fd >= 0) close(fd);
