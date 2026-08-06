@@ -3,8 +3,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct cgguf * cgguf_h;
-
 typedef enum {
     CGGUF_DFMT_F32     = 0,
     CGGUF_DFMT_F16     = 1,
@@ -50,32 +48,32 @@ typedef enum {
 } cgguf_dfmt_e;
 
 typedef enum {
-    CGGUF_TYPE_UINT8 = 0,
-    CGGUF_TYPE_INT8 = 1,
-    CGGUF_TYPE_UINT16 = 2,
-    CGGUF_TYPE_INT16 = 3,
-    CGGUF_TYPE_UINT32 = 4,
-    CGGUF_TYPE_INT32 = 5,
+    CGGUF_TYPE_UINT8   = 0,
+    CGGUF_TYPE_INT8    = 1,
+    CGGUF_TYPE_UINT16  = 2,
+    CGGUF_TYPE_INT16   = 3,
+    CGGUF_TYPE_UINT32  = 4,
+    CGGUF_TYPE_INT32   = 5,
     CGGUF_TYPE_FLOAT32 = 6,
-    CGGUF_TYPE_BOOL = 7,
-    CGGUF_TYPE_STRING = 8,
-    CGGUF_TYPE_ARRAY = 9,
-    CGGUF_TYPE_UINT64 = 10,
-    CGGUF_TYPE_INT64 = 11,
+    CGGUF_TYPE_BOOL    = 7,
+    CGGUF_TYPE_STRING  = 8,
+    CGGUF_TYPE_ARRAY   = 9,
+    CGGUF_TYPE_UINT64  = 10,
+    CGGUF_TYPE_INT64   = 11,
     CGGUF_TYPE_FLOAT64 = 12,
 } cgguf_type_e;
 
 enum { CGGUF_MAX_DIMS = 4 };
 
+// The string as a UTF-8 non-null-terminated string.
 typedef struct {
-    uint64_t     len;
-    // The string as a UTF-8 non-null-terminated string.
-    const char * str;
+    uint64_t     size;
+    const char * data;
 } cgguf_str_s;
 
 typedef struct {
     cgguf_type_e type;
-    uint64_t     size;
+    uint64_t     left;
     const void * data;
 } cgguf_arr_s;
 
@@ -103,28 +101,38 @@ typedef union {
 } cgguf_val_u;
 
 typedef struct {
-    cgguf_str_s str;
+    cgguf_str_s  str;
     cgguf_type_e type;
-    cgguf_val_u val;
+    cgguf_val_u  val;
 } cgguf_keyval_s;
 
 typedef struct {
-    uint64_t left;
-    uint64_t priv[3];
-} cgguf_iter_s;
+    uint64_t alignment;
+    uint64_t n_keyvals;
+    uint64_t n_tensors;
+    const cgguf_keyval_s * keyvals;
+    const cgguf_tensor_s * tensors;
+} cgguf_s;
 
-cgguf_h      cgguf_open(const char *fname);
-void         cgguf_drop(cgguf_h);
-cgguf_iter_s cgguf_iter(cgguf_h);
-cgguf_type_e cgguf_peek(cgguf_iter_s*, cgguf_str_s*, cgguf_val_s*);
-_Bool        cgguf_fine(cgguf_iter_s*);
-void         cgguf_cont(cgguf_iter_s*);
-void         cgguf_nest(cgguf_iter_s*);
+typedef const cgguf_s * cgguf_h;
 
+cgguf_h cgguf_open(const char *fname);
+void    cgguf_drop(cgguf_h);
+
+// Read a value from front of an array making array shorter
+bool cgguf_read_val(cgguf_arr_s*, cgguf_val_u*);
+// Consume all values in array to obtain final `data` field
+void cgguf_skip_arr(cgguf_arr_s*);
 // compare cgguf_str_s with 0-terminated string
-int cgguf_strequal(const cgguf_str_s *, const char *);
+bool cgguf_strequal(const cgguf_str_s *, const char *);
 
 #if 0
+
+//cgguf_iter_s cgguf_iter(cgguf_h);
+//cgguf_type_e cgguf_peek(cgguf_iter_s*, cgguf_str_s*, cgguf_val_s*);
+//_Bool        cgguf_fine(cgguf_iter_s*);
+//void         cgguf_cont(cgguf_iter_s*);
+//void         cgguf_nest(cgguf_iter_s*);
 
 typedef struct {
     uint64_t n_keyvals;
@@ -176,12 +184,12 @@ for (int i = 0; i < cgguf_num_tensors(h); ++i) {
 
 
 cgguf_tensor_s t;
-for (int i = 0; cgguf_get_tensor(h, i, &t); ++i)
+for (int i = 0; cgguf_tensor_at(h, i, &t); ++i)
     if (cgguf_strequal(t.name, "my-tensor"))
         return t;
 
 cgguf_keyval_s kv;
-for (int i = 0; cgguf_get_keyval(h, i, &kv); ++i)
+for (int i = 0; cgguf_keyval_at(h, i, &kv); ++i)
     if (cgguf_strequal(kv.str, "my-key"))
         return kv;
 
@@ -204,7 +212,7 @@ while (cgguf_arr_read(&a, &e)) {
     } else {
         cgguf_arr_skip(&a2);
     }
-    cgguf_arr_cont(&v, &a2);
+    v.data = v2.data;
 }
 
 
