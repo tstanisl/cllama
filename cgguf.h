@@ -101,7 +101,7 @@ typedef union {
 } cgguf_val_u;
 
 typedef struct {
-    cgguf_str_s  str;
+    cgguf_str_s  key;
     cgguf_type_e type;
     cgguf_val_u  val;
 } cgguf_keyval_s;

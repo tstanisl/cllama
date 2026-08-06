@@ -1,25 +1,19 @@
 #include "cgguf.h"
 #include "cutils.h"
 
+#include <assert.h>
+#include <inttypes.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-_Static_assert(sizeof(cgguf_value_type_e) == sizeof(u32), "invalid size");
-
-typedef struct {
-    cgguf_s base;
-    char * data;
-    size_t size;
-} ctx_s;
-
 typedef struct {
     u64 left;
-    char * data;
+    const char * data;
 } stream_s;
 
-static u64 type_size(cgguf_value_type_e type) {
+static u64 type_size(cgguf_type_e type) {
     switch (type) {
     case CGGUF_TYPE_UINT8:   return 1;
     case CGGUF_TYPE_INT8:    return 1;
@@ -38,10 +32,10 @@ static u64 type_size(cgguf_value_type_e type) {
     };
 }
 
-static bool scan_(stream_s * s, void * p, u64 size) {
+static bool scan_(stream_s * s, void * ptr, u64 size) {
     if (ERR_ON(s->left < size, "file too short"))
         return 0;
-    if (p) memcpy(b, s->data, size);
+    if (ptr) memcpy(ptr, s->data, size);
     s->data = (char*)s->data + size;
     s->left -= size;
     return 1;
@@ -62,43 +56,44 @@ static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
     if (!scan(s, &type))
         return 0;
     u64 elem_size = type_size(type);
-    if (ERR_ON(elem_size == 0, "invalid type: %" PTRu32, type))
+    if (ERR_ON(elem_size == 0, "invalid type: %" PRIu32, type))
         return 0;
-    if (!scan(s, &a->size))
+    if (!scan(s, &a->left))
         return 0;
     a->data = s->data;
     return 1;
 }
 
 static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
-    u64 elem_size = type_size(type);
-    assert(size > 0);
+    u64 elem_size = type_size(a->type);
+    assert(elem_size > 0);
     // fixed element types
-    if (elem_size != -1)
-        return skip(s, elem_size * a->size);
-    if (type == CGGUF_TYPE_STRING) {
-        for (u64 i = 0; i < a->size; ++i) {
+    if (elem_size != (u64)-1)
+        return skip(s, elem_size * a->left); // safe?
+    if (a->type == CGGUF_TYPE_STRING) {
+        for (u64 i = 0; i < a->left; ++i) {
             u64 slen;
             if (!scan(s, &slen))
                 return 0;
             if (!skip(s, slen))
                 return 0;
         }
+        return 1;
     } else {
-        assert(type == CGGUF_TYPE_ARRAY);
+        assert(a->type == CGGUF_TYPE_ARRAY);
         return scan_arr(s, a) && skip_arr(s, a);
     }
 }
 
-static bool scan_val(stream * s,
-    cgguf_value_type_e type, cgguf_val_u * v
+static bool scan_val(stream_s * s,
+    cgguf_type_e type, cgguf_val_u * v
 ) {
     u64 size = type_size(type);
     assert(size > 0);
-    if (size != -1)
-        return scan(s, v, size);
+    if (size != (u64)-1)
+        return scan_(s, v, size);
     if (type == CGGUF_TYPE_STRING)
-        return scan_str(s, &v->str)
+        return scan_str(s, &v->str);
     assert(type == CGGUF_TYPE_ARRAY);
     return scan_arr(s, &v->arr);
 }
@@ -110,13 +105,25 @@ static bool scan_keyval(stream_s * s, cgguf_keyval_s * p) {
     if (!scan(s, &type))
         return 0;
     u64 size = type_size(type);
-    if (ERR_ON(size == 0, "invalid type: %" PTRu32, type))
+    if (ERR_ON(size == 0, "invalid type: %" PRIu32, type))
         return 0;
-    p->type = (cgguf_value_type_e)type;
+    p->type = (cgguf_type_e)type;
     return scan_val(s, p->type, &p->val);
 }
 
-cgguf_s * cgguf_open(const char *fname) {
+static bool scan_tensor(stream_s * s, cgguf_tensor_s * p) {
+    (void)s;
+    (void)p;
+    return 0;
+}
+
+typedef struct {
+    cgguf_s base;
+    char * data;
+    size_t size;
+} ctx_s;
+
+const cgguf_s * cgguf_open(const char *fname) {
     int fd = -1;
     char * data = MAP_FAILED;
     cgguf_keyval_s * keyvals = 0;
@@ -169,7 +176,7 @@ cgguf_s * cgguf_open(const char *fname) {
     u32 alignment = 32;
     // scan key-value pairs
     for (u64 i = 0; i < hdr.n_keyvals; ++i) {
-        auto kv = &keyvals[i];
+        cgguf_keyval_s * kv = &keyvals[i];
         if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
             goto fail;
         if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
@@ -179,24 +186,30 @@ cgguf_s * cgguf_open(const char *fname) {
     
     // scan tensors
     for (u64 i = 0; i < hdr.n_tensors; ++i)
-        if (ERR_ON(!scan_tensor(&s, tensors[i]),
+        if (ERR_ON(!scan_tensor(&s, &tensors[i]),
                    "scan_tensor %" SCNu64, i))
             goto fail;
 
     // compute data offset
-    // update tensors
-
-    *ctx = (cgguf_s) {
-        .data = data,
-        .size = size,
-        .n_keyvals = hdr.n_keyvals,
-        .n_tensors = hdr.n_tensors,
-    };
 
     // file descriptor is no longer needed
     close(fd);
 
-    return ctx;
+    // update tensors
+
+    *ctx = (ctx_s) {
+        .base = {
+            .alignment = alignment,
+            .n_keyvals = hdr.n_keyvals,
+            .keyvals = keyvals,
+            .n_tensors = hdr.n_tensors,
+            .tensors = tensors,
+        },
+        .data = data,
+        .size = size,
+    };
+
+    return &ctx->base;
 
 fail:
     free(keyvals);
@@ -207,16 +220,23 @@ fail:
     return 0;
 }
 
-void cgguf_drop(cgguf_s * ctx) {
+void cgguf_drop(const cgguf_s * base) {
+    ctx_s * ctx = container_of(base, ctx_s, base);
     munmap((void*)ctx->data, ctx->size);
+    free((void*)ctx->base.keyvals);
+    free((void*)ctx->base.tensors);
     free(ctx);
 }
 
 bool cgguf_read_val(cgguf_arr_s* a, cgguf_val_u* v) {
-    stream_s s = { .data = a->data, .left = -1 };
-    scan_val(&s, v);
-    a->left--;
-    a->data = s.data;
+    if (a->left) {
+        stream_s s = { .data = a->data, .left = -1 };
+        scan_val(&s, a->type, v);
+        a->left--;
+        a->data = s.data;
+        return 1;
+    }
+    return 0;
 }
 
 void cgguf_skip_arr(cgguf_arr_s* a) {
@@ -226,10 +246,10 @@ void cgguf_skip_arr(cgguf_arr_s* a) {
     a->data = s.data;
 }
 
-int cgguf_strequal(const cgguf_str_s * a, const char * b) {
-    size_t alen = a->size;
+bool cgguf_strequal(cgguf_str_s a, const char * b) {
+    size_t alen = a.size;
     size_t blen = strlen(b);
-    return alen == blen && memcmp(a->str, b, alen) == 0;
+    return alen == blen && memcmp(a.data, b, alen) == 0;
 }
 
 #if 0 
