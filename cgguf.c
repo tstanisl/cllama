@@ -52,11 +52,10 @@ static bool scan_str(stream_s * s, cgguf_str_s * p) {
 }
 
 static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
-    u32 type;
-    if (!scan(s, &type))
+    if (!scan(s, &a->type))
         return 0;
-    u64 elem_size = type_size(type);
-    if (ERR_ON(elem_size == 0, "invalid type: %" PRIu32, type))
+    u64 elem_size = type_size(a->type);
+    if (ERR_ON(elem_size == 0, "invalid type: %" PRIu32, a->type))
         return 0;
     if (!scan(s, &a->left))
         return 0;
@@ -65,6 +64,7 @@ static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
 }
 
 static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
+    //printf("%s %d %d\n", __func__, (int)a->left, (int)a->type);
     u64 elem_size = type_size(a->type);
     assert(elem_size > 0);
     // fixed element types
@@ -81,7 +81,14 @@ static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
         return 1;
     } else {
         assert(a->type == CGGUF_TYPE_ARRAY);
-        return scan_arr(s, a) && skip_arr(s, a);
+        for (u64 i = 0, cnt = a->left; i < cnt; ++i) {
+            printf("i=%d\n", (int)i);
+            if (ERR_ON(scan_arr(s, a), "scan_arr"))
+                return 0;
+            if (ERR_ON(skip_arr(s, a), "skip_arr"))
+                return 0;
+        }
+        return 1;
     }
 }
 
@@ -98,17 +105,18 @@ static bool scan_val(stream_s * s,
     return scan_arr(s, &v->arr);
 }
 
-static bool scan_keyval(stream_s * s, cgguf_keyval_s * p) {
-    if (!scan_str(s, &p->key))
+static bool scan_keyval(stream_s * s, cgguf_keyval_s * kv) {
+    if (!scan_str(s, &kv->key))
         return 0;
     u32 type;
     if (!scan(s, &type))
         return 0;
+    //printf("type=%d key=%.*s\n", (int)type, (int)kv->key.size, kv->key.data);
     u64 size = type_size(type);
     if (ERR_ON(size == 0, "invalid type: %" PRIu32, type))
         return 0;
-    p->type = (cgguf_type_e)type;
-    return scan_val(s, p->type, &p->val);
+    kv->type = (cgguf_type_e)type;
+    return scan_val(s, kv->type, &kv->val);
 }
 
 static bool scan_tensor(stream_s * s, cgguf_tensor_s * p) {
@@ -179,6 +187,9 @@ const cgguf_s * cgguf_open(const char *fname) {
         cgguf_keyval_s * kv = &keyvals[i];
         if (ERR_ON(!scan_keyval(&s, kv), "scan_keyval %" SCNu64, i))
             goto fail;
+        if (kv->type == CGGUF_TYPE_ARRAY)
+            if (ERR_ON(!skip_arr(&s, &kv->val.arr), "skip_arr"))
+                goto fail;
         if (keyvals[i].type == CGGUF_TYPE_UINT32 &&
             cgguf_strequal(kv->key, "general.alignment")
         ) alignment = kv->val.u32;
