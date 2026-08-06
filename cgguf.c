@@ -71,8 +71,23 @@ static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
 }
 
 static bool skip_arr(stream_s * s, cgguf_arr_s * a) {
-    
-    
+    u64 elem_size = type_size(type);
+    assert(size > 0);
+    // fixed element types
+    if (elem_size != -1)
+        return skip(s, elem_size * a->size);
+    if (type == CGGUF_TYPE_STRING) {
+        for (u64 i = 0; i < a->size; ++i) {
+            u64 slen;
+            if (!scan(s, &slen))
+                return 0;
+            if (!skip(s, slen))
+                return 0;
+        }
+    } else {
+        assert(type == CGGUF_TYPE_ARRAY);
+        return scan_arr(s, a) && skip_arr(s, a);
+    }
 }
 
 static bool scan_val(stream * s,
@@ -85,7 +100,7 @@ static bool scan_val(stream * s,
     if (type == CGGUF_TYPE_STRING)
         return scan_str(s, &v->str)
     assert(type == CGGUF_TYPE_ARRAY);
-    return scan_arr(s, &v->arr) && skip_arr(s, &v->arr);
+    return scan_arr(s, &v->arr);
 }
 
 static bool scan_keyval(stream_s * s, cgguf_keyval_s * p) {
@@ -195,6 +210,20 @@ fail:
 void cgguf_drop(cgguf_s * ctx) {
     munmap((void*)ctx->data, ctx->size);
     free(ctx);
+}
+
+bool cgguf_read_val(cgguf_arr_s* a, cgguf_val_u* v) {
+    stream_s s = { .data = a->data, .left = -1 };
+    scan_val(&s, v);
+    a->left--;
+    a->data = s.data;
+}
+
+void cgguf_skip_arr(cgguf_arr_s* a) {
+    stream_s s = { .data = a->data, .left = -1 };
+    skip_arr(&s, a);
+    a->left = 0;
+    a->data = s.data;
 }
 
 int cgguf_strequal(const cgguf_str_s * a, const char * b) {
