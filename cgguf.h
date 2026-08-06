@@ -63,22 +63,21 @@ typedef enum {
     CGGUF_TYPE_UINT64 = 10,
     CGGUF_TYPE_INT64 = 11,
     CGGUF_TYPE_FLOAT64 = 12,
-    // Used to share tensor and key-val interfaces
-    CGGUF_TYPE_TENSOR = 128,
 } cgguf_type_e;
 
 enum { CGGUF_MAX_DIMS = 4 };
 
 typedef struct {
-    uint64_t len;
+    uint64_t     len;
     // The string as a UTF-8 non-null-terminated string.
     const char * str;
 } cgguf_str_s;
 
 typedef struct {
     cgguf_type_e type;
-    uint64_t len;
-} cgguf_array_s;
+    uint64_t     size;
+    const void * data;
+} cgguf_arr_s;
 
 typedef struct {
     cgguf_str_s  name;
@@ -88,21 +87,26 @@ typedef struct {
 } cgguf_tensor_s;
 
 typedef union {
-    uint8_t  u8;
-    int8_t   i8;
-    uint16_t u16;
-    int16_t  i16;
-    uint32_t u32;
-    int32_t  i32;
-    float    f32;
-    uint64_t u64;
-    int64_t  i64;
-    double   f64;
-    bool     b8;
+    uint8_t     u8 ;
+    int8_t      i8 ;
+    uint16_t    u16;
+    int16_t     i16;
+    uint32_t    u32;
+    int32_t     i32;
+    float       f32;
+    uint64_t    u64;
+    int64_t     i64;
+    double      f64;
+    bool        b8 ;
     cgguf_str_s str;
-    cgguf_array_s array;
-    cgguf_tensor_s tensor;
+    cgguf_arr_s arr;
 } cgguf_val_u;
+
+typedef struct {
+    cgguf_str_s str;
+    cgguf_type_e type;
+    cgguf_val_u val;
+} cgguf_keyval_s;
 
 typedef struct {
     uint64_t left;
@@ -164,6 +168,66 @@ for (auto it = cgguf_iter(h); it.left; cgguf_cont(&it)) {
 }
 
 for (auto it = cgguf_iter(h); it.left; cgguf_cont(&it)) {
+
+for (int i = 0; i < cgguf_num_tensors(h); ++i) {
+    cgguf_tensor_s t;
+    cgguf_get_tensor(h, i, &t);
+}
+
+
+cgguf_tensor_s t;
+for (int i = 0; cgguf_get_tensor(h, i, &t); ++i)
+    if (cgguf_strequal(t.name, "my-tensor"))
+        return t;
+
+cgguf_keyval_s kv;
+for (int i = 0; cgguf_get_keyval(h, i, &kv); ++i)
+    if (cgguf_strequal(kv.str, "my-key"))
+        return kv;
+
+cgguf_meta_s {
+    uint64_t n_keyvals;
+    uint64_t n_tensors;
+    uint64_t alignment;
+};
+
+cgguf_get_meta();
+
+cgguf_arr_a a = kv.arr;
+cgguf_val_u e;
+assert(type == ARRAY);
+while (cgguf_arr_read(&a, &e)) {
+    auto a2 = e.arr;
+    if (v.size == 42) {
+        while (cgguf_arr_read(&a2, &e))
+            ...;
+    } else {
+        cgguf_arr_skip(&a2);
+    }
+    cgguf_arr_cont(&v, &a2);
+}
+
+
+
+
+
+
+
+cgguf_value_s v;
+for (int i = 0; cgguf_get_value(h, i, &v); ++i)
+    if (cgguf_strequal(v.str, "my-key"))
+        return kv;
+
+cgguf_tensor_s t;
+for (int i = 0; i < h->n_tensor; ++i)
+    if (cgguf_strequal(h->tensor_str[i], "my-tensor"))
+        return cgguf_get_tensor(h, i, &t);
+
+cgguf_tagval_s v;
+for (int i = 0; i < h->n_keyval; ++i)
+    if (cgguf_strequal(h->keyval_str[i], "my-key"))
+        return cgguf_get_value(h, i, &v);
+
 
 
 #endif
