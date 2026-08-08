@@ -81,7 +81,10 @@ typedef struct {
     cgguf_str_s  name;
     int64_t      dims[CGGUF_MAX_DIMS];
     cgguf_dfmt_e dfmt;
-    const void * data;
+    union {
+        const void * data;
+        uint64_t     _off;
+    };
 } cgguf_tensor_s;
 
 typedef union {

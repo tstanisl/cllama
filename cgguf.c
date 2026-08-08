@@ -120,10 +120,35 @@ static bool scan_keyval(stream_s * s, cgguf_keyval_s * kv) {
     return scan_val(s, kv->type, &kv->val);
 }
 
-static bool scan_tensor(stream_s * s, cgguf_tensor_s * p) {
-    (void)s;
-    (void)p;
-    return 0;
+static bool scan_tensor(stream_s * s, cgguf_tensor_s * t) {
+    if (!scan_str(s, &t->name))
+        return 0;
+
+    u32 ndims;
+    if (!scan(s, &ndims))
+        return 0;
+    if (ERR_ON(ndims > CGGUF_MAX_DIMS, "too many dims"))
+        return 0;
+    for (u32 i = 0; i < CGGUF_MAX_DIMS; ++i)
+        if (i < ndims) {
+            if (!scan(s, &t->dims[i]))
+                return 0;
+        } else {
+            t->dims[i] = 1;
+        }
+
+    u32 dfmt;
+    if (!scan(s, &dfmt))
+        return 0;
+
+    if (ERR_ON(dfmt >= CGGUF_DFMT_COUNT, "invalid dfmt %" PRIu32, dfmt))
+        return 0;
+    t->dfmt = dfmt;
+
+    if (!scan(s, &t->_off))
+        return 0;
+
+    return 1;
 }
 
 typedef struct {
@@ -195,14 +220,28 @@ const cgguf_s * cgguf_open(const char *fname) {
             cgguf_strequal(kv->key, "general.alignment")
         ) alignment = kv->val.u32;
     }
-    
+
+    if (ERR_ON(alignment == 0 || alignment % 8 != 0,
+               "invalid alignment %" PRIu32, alignment))
+        goto fail;
+
     // scan tensors
     for (u64 i = 0; i < hdr.n_tensors; ++i)
         if (ERR_ON(!scan_tensor(&s, &tensors[i]),
                    "scan_tensor %" SCNu64, i))
             goto fail;
 
-    // compute data offset
+    // compute tensor_offset
+    u64 tensor_offset = (size - s.left + alignment - 1) / alignment * alignment;
+    for (u64 i = 0; i < hdr.n_tensors; ++i) {
+        u64 off = tensors[i]._off;
+        if (ERR_ON(off % alignment != 0, "invalid offset"))
+            goto fail;
+        off += tensor_offset;
+        if (ERR_ON(off > size, "offset overflows file"))
+            goto fail;
+        tensors[i].data = data + off;
+    }
 
     // file descriptor is no longer needed
     close(fd);

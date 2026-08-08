@@ -17,10 +17,20 @@ int main(int argc, char * argv[argc + 1]) {
         if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens")) {
             printf("\ttype=%d\n", kv.val.arr.type);
             assert(kv.val.arr.type == CGGUF_TYPE_STRING);
+            #if 0
             cgguf_val_u v;
             for (int i = 0; cgguf_read_val(&kv.val.arr, &v); ++i)
                 printf("\t[%d] = '%.*s'\n", i, (int)v.str.size, v.str.data);
+            #endif
         }
+    }
+    for (u64 i = 0; i < ctx->n_tensors; ++i) {
+        cgguf_tensor_s t = ctx->tensors[i];
+        printf("tensor[%.*s] type=%d dims=",
+               (int)t.name.size, t.name.data, (int)t.dfmt);
+        for (int d = 0; d < CGGUF_MAX_DIMS; ++d)
+            printf("%c%d", d ? ',' : '[', (int)t.dims[d]);
+        puts("]");
     }
 
     cgguf_drop(ctx);
