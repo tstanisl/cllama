@@ -44,6 +44,16 @@ static bool scan_(stream_s * s, void * ptr, u64 size) {
 #define scan(s,p) scan_((s), (p), sizeof *(p))
 #define skip(s,n) scan_((s), 0, (n))
 
+static bool scan_type(stream_s * s, cgguf_type_e * type) {
+    u32 u;
+    if (!scan(s, &u))
+        return 0;
+    if (ERR_ON(u >= 13, "invalid type: %" PRIu32, u))
+        return 0;
+    *type = u;
+    return 1;
+}
+
 static bool scan_str(stream_s * s, cgguf_str_s * p) {
     if (ERR_ON(!scan(s, &p->size), "scan"))
         return 0;
@@ -52,10 +62,7 @@ static bool scan_str(stream_s * s, cgguf_str_s * p) {
 }
 
 static bool scan_arr(stream_s * s, cgguf_arr_s * a) {
-    if (!scan(s, &a->type))
-        return 0;
-    u64 elem_size = type_size(a->type);
-    if (ERR_ON(elem_size == 0, "invalid type: %" PRIu32, a->type))
+    if (!scan_type(s, &a->type))
         return 0;
     if (!scan(s, &a->left))
         return 0;
@@ -108,14 +115,8 @@ static bool scan_val(stream_s * s,
 static bool scan_keyval(stream_s * s, cgguf_keyval_s * kv) {
     if (!scan_str(s, &kv->key))
         return 0;
-    u32 type;
-    if (!scan(s, &type))
+    if (!scan_type(s, &kv->type))
         return 0;
-    //printf("type=%d key=%.*s\n", (int)type, (int)kv->key.size, kv->key.data);
-    u64 size = type_size(type);
-    if (ERR_ON(size == 0, "invalid type: %" PRIu32, type))
-        return 0;
-    kv->type = (cgguf_type_e)type;
     return scan_val(s, kv->type, &kv->val);
 }
 
