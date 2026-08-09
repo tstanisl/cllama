@@ -14,15 +14,19 @@ int main(int argc, char * argv[argc + 1]) {
         printf("key[%.*s] type=%d\n",
                (int)kv.key.size, kv.key.data,
                (int)kv.type);
-        if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens")) {
+        if (kv.type == CGGUF_TYPE_STRING)
+            printf("\t%.*s\n", (int)kv.val.str.size, kv.val.str.data);
+        #if 1
+        if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens") ||
+            cgguf_strequal(kv.key, "tokenizer.ggml.merges")
+        ) {
             printf("\ttype=%d\n", kv.val.arr.type);
             assert(kv.val.arr.type == CGGUF_TYPE_STRING);
-            #if 0
             cgguf_val_u v;
             for (int i = 0; cgguf_read_val(&kv.val.arr, &v); ++i)
                 printf("\t[%d] = '%.*s'\n", i, (int)v.str.size, v.str.data);
-            #endif
         }
+        #endif
     }
     for (u64 i = 0; i < ctx->n_tensors; ++i) {
         cgguf_tensor_s t = ctx->tensors[i];
