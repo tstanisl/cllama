@@ -17,15 +17,21 @@ int main(int argc, char * argv[argc + 1]) {
         if (kv.type == CGGUF_TYPE_STRING)
             printf("\t%.*s\n", (int)kv.val.str.size, kv.val.str.data);
         #if 1
-        if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens") ||
-            cgguf_strequal(kv.key, "tokenizer.ggml.merges")
-        ) {
-            printf("\ttype=%d\n", kv.val.arr.type);
-            assert(kv.val.arr.type == CGGUF_TYPE_STRING);
-            cgguf_val_u v;
-            for (int i = 0; cgguf_read_val(&kv.val.arr, &v); ++i)
-                printf("\t[%d] = '%.*s'\n", i, (int)v.str.size, v.str.data);
-        }
+        static const char* arrays[] = {
+            "general.languages",
+            "general.tags",
+            "tokenizer.ggml.tokens",
+            "tokenizer.ggml.merges",
+            0
+        };
+        for (int j = 0; arrays[j]; ++j)
+            if (cgguf_strequal(kv.key, arrays[j])) {
+                printf("\ttype=%d\n", kv.val.arr.type);
+                assert(kv.val.arr.type == CGGUF_TYPE_STRING);
+                cgguf_val_u v;
+                for (int i = 0; cgguf_read_val(&kv.val.arr, &v); ++i)
+                    printf("\t[%d] = '%.*s'\n", i, (int)v.str.size, v.str.data);
+            }
         #endif
     }
     for (u64 i = 0; i < ctx->n_tensors; ++i) {

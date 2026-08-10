@@ -6,7 +6,7 @@ typedef struct ctokenizer * ctokenizer_h;
 
 typedef struct {
     const char * data;
-    size_t       size;
+    uint8_t      size;
 } ctokenizer_entry_s;
 
 typedef enum {
@@ -21,5 +21,6 @@ ctokenizer_h ctokenizer_init(
 );
 
 void ctokenizer_drop(ctokenizer_h);
-int ctokenizer_encode(ctokenizer_h, int len, const char str[len], int tokens[len]);
+size_t ctokenizer_encode(ctokenizer_h, size_t len, const char str[len], int tokens[len]);
+size_t ctokenizer_decode(ctokenizer_h, size_t len, const int tokens[len], int max_chars, char buf[restrict max_chars]);
 
