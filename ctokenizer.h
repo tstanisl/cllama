@@ -17,9 +17,10 @@ typedef enum {
 ctokenizer_h ctokenizer_init(
     ctokenizer_type_e type,
     int n_tokens,
-    ctokenizer_entry_s get(void*, int), void * priv
+    ctokenizer_entry_s next_token(void*), void * next_token_ctx
 );
 
 void ctokenizer_drop(ctokenizer_h);
-int ctokenizer_encode(ctokenizer_h, int len, const char str[len], int tokens[len]);
+size_t ctokenizer_encode(ctokenizer_h, size_t len, const char str[len], int tokens[len]);
+size_t ctokenizer_decode(ctokenizer_h, size_t len, const int tokens[len], size_t max_chars, char buf[restrict max_chars]);
 

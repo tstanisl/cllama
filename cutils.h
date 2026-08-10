@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -14,7 +15,7 @@ static void msg_(const char * fname, int line, const char * level, const char * 
     fputc('\n', stderr);
 }
 
-#define ERR(...) msg_(__FILE__, __LINE__, "error", __VA_ARGS__)
+#define ERR(...) msg_(__FILE__, __LINE__, "error" __VA_OPT__(,) __VA_ARGS__, "")
 #define ERR_ON(cnd, ...) (cnd ? ERR(__VA_ARGS__), 1 : 0)
 #define ERRSTR strerror(errno)
 
@@ -35,3 +36,5 @@ typedef   double f64;
 
 #define container_of(PTR, TYPE, MEMBER) \
     ((TYPE*)((char*)(1 ? (PTR) : &((TYPE*)0)->MEMBER) - offsetof(TYPE, MEMBER)))
+
+#define ARRAY_SIZE(...) (sizeof(__VA_ARGS__) / sizeof 0[__VA_ARGS__])
