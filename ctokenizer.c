@@ -105,61 +105,34 @@ ctokenizer_h ctokenizer_init(
     if (ERR_ON(!hm, "hmap_init"))
         goto fail;
 
+    u32 n_merges = 0;
     for (int i = 0; i < n_tokens; ++i) {
         ctokenizer_entry_s e = get(priv, i);
         for (u32 p = 1; p + 1 < e.size; ++p) {
-            u32 a = hmap_search(&hmap, strhash(p, e.data), tcmp, &hm);
+            u32 a = hmap_search(&hmap, strhash(p, e.data), tcmp, &t);
             if (a == HMAP_NONE) continue;
-            u32 b = hmap_search(&hmap, strhash(e.size - p, e.data + p), tcmp, &hm);
+            u32 b = hmap_search(&hmap, strhash(e.size - p, e.data + p), tcmp, &t);
             if (b == HMAP_NONE) continue;
             merge_s * m = ibuf_grow(&ib, sizeof *m);
             if (ERR_ON(!m, "ibuf_grow"))
                 goto fail;
             *m = (merge_s) { a, b, i };
+            ++n_merges;
         }
     }
+    t.merges = ibuf_drop(&ib);
 
     // mapping from string to token is no longer needed
     hmap_drop(hm);
     hm = 0;
 
-
-
-
-    data = calloc(1, size);
-    if (ERR_ON(!data, "malloc"))
+    // reuse hm for mapping merges
+    t.hm = hmap_init(n_merges, merge_hash, 0);
+    if (ERR_ON(!t.hm, "hmap_init"))
         goto fail;
 
-    int ret = hmap_init(&hmap, n_tokens);
-    if (ERR_ON(ret, "hmap_init"))
-        goto fail;
-
-    char * head = data;
-    for (int i = 0; i < n_tokens; ++i) {
-        ctokenizer_entry_s e = get(priv, i);
-        token_s * t = (void*) head;
-        t->size = e.size;
-        memcpy(t->data, e.data, e.size);
-        hmap_insert(&hm, strhash(e.size, e.data), ~(head - data));
-        head += e.size;
-    }
-
-    // create merges
-    
-    for (int i = 0; i < n_tokens; ++i) {
-        ctokenizer_entry_s e = get(priv, i);
-        for (u32 p = 1; p + 1 < e.size; ++p) {
-            u32 a = hmap_search(&hmap, strhash(p, e.data), tcmp, data);
-            if (!a) continue;
-            u32 b = hmap_search(&hmap, strhash(e.size - p, e.data + p), tcmp, data);
-            if (!b) continue;
-
-        
-
-
-
-
-
+    *res = t;
+    return res;
 
 fail:
     free( ibuf_drop(&ib) );
@@ -167,6 +140,14 @@ fail:
     free(res);
     ctokenizer_drop(&t);
     return 0;
+}
+
+void ctokenizer_drop(ctokenizer_h t) {
+    hm_drop(t->hm);
+    free(t->data);
+    free(t->start);
+    free(t->merge);
+    *t = (ctokenizer_s) { 0 };
 }
 
 
