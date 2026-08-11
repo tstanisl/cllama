@@ -9,18 +9,18 @@ typedef struct {
     size_t left;
 } ibuf_s;
 
-#define IBUF_INIT (ibuf){0}
+#define IBUF_INIT (ibuf_s){0}
 
 static inline void * ibuf_grow(ibuf_s * ib, size_t grow) {
     char * data = ib->data;
     if (ib->left < grow) {
         size_t size = ib->used + grow;
-        size += size / 2;
+        size += size / 2 + 1;
         data = realloc(data, size);
         if (!data)
             return 0;
         ib->data = data;
-        ib->left = new_size - ib->used;
+        ib->left = size - ib->used;
     }
     void * ptr = data + ib->used;
     ib->used += grow;

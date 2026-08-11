@@ -1,4 +1,5 @@
 #include "hmap.h"
+#include "cutils.h"
 
 typedef struct hmap {
     u32 mask;
@@ -8,7 +9,7 @@ typedef struct hmap {
 hmap_h hmap_init(uint32_t size, uint32_t hash_cb(uint32_t, const void*), const void *ctx) {
     u32 mask;
     for (mask = 1; 3 * size / 2 >= mask; mask = 2 * mask + 1);
-    hmap * hm = calloc(1, sizeof *hm + (mask + 1) * sizeof hm->data[0]);
+    hmap_s * hm = calloc(1, sizeof *hm + (mask + 1) * sizeof hm->data[0]);
     if (ERR_ON(!hm, "malloc"))
         return 0;
     hm->mask = mask;

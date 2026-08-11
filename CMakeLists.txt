@@ -11,7 +11,7 @@ set(CMAKE_C_FLAGS_DEBUG "-g -ggdb -fsanitize=address,undefined")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 
 add_library(cgguf SHARED cgguf.c)
-add_library(ctokenizer SHARED ctokenizer.c)
+add_library(ctokenizer SHARED ctokenizer.c hmap.c)
 
 
 add_executable(cllama cllama.c)

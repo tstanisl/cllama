@@ -6,7 +6,7 @@ typedef struct ctokenizer * ctokenizer_h;
 
 typedef struct {
     const char * data;
-    uint8_t      size;
+    size_t       size;
 } ctokenizer_entry_s;
 
 typedef enum {
