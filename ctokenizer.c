@@ -3,60 +3,15 @@
 #include "cutils.h"
 
 typedef struct {
-    u8   len;
-    char str[];
-} token_s;
+    u32 a, b, t;
+} merge_s;
 
 struct ctokenizer {
-    char * data;
-    u32  * tmap;
-    u32    tmask;
+    u32 n_tokens;
+    char    * str;
+    u32     * off;
+    merge_s * mrg;
 };
-
-typedef struct {
-    u32   mask;
-    u32 * data;
-} hmap_s;
-
-static int hmap_init(hmap_s * hm, u32 n_slots) {
-    u32 mask;
-    for (mask = 1; 2 * mask < n_slots; mask = 2 * mask + 1);
-    u32 * data = calloc(mask + 1, sizeof *data);
-    if (ERR_ON(!data, "malloc"))
-        return -1;
-    hm->mask = mask;
-    hm->data = data;
-    return 0;
-}
-
-static void hmap_drop(hmap_s * hm) {
-    free(hm->data);
-    *hm = (hmap_s) { 0 };
-}
-
-static void hmap_insert(hmap_s * hm, u32 hash, u32 value) {
-    assert(value);
-    u32 * data = hm->data;
-    u32   mask = hm->mask;
-    for (u32 step = 1; 1; hash += step, step += 2)
-        if (!data[hash & mask]) {
-            data[hash & mask] = value;
-            return;
-        }
-}
-
-static u32 hmap_search(
-    hmap_s * hm, u32 hash,
-    bool cmp(u32, const void*), const void *priv
-) {
-    u32 * data = hm->data;
-    u32   mask = hm->mask;
-    for (u32 step = 1; 1; hash += step, step += 2) {
-        u32 value = data[hash & mask];
-        if (!value) return 0;
-        if (cmp(value, priv)) return value;
-    }
-}
 
 static u64 strhash(u32 len, const char str[len]) {
     // FNV hash
@@ -67,10 +22,6 @@ static u64 strhash(u32 len, const char str[len]) {
     }
     return hash;
 }
-
-typedef struct {
-    u32 a, b, t;
-} merge_s;
 
 ctokenizer_h ctokenizer_init(
     ctokenizer_type_e type,
@@ -97,7 +48,7 @@ ctokenizer_h ctokenizer_init(
         token_s * t = (void*) head;
         t->size = e.size;
         memcpy(t->data, e.data, e.size);
-        hmap_insert(&hm, strhash(e.size, e.data), head + 1 - data);
+        hmap_insert(&hm, strhash(e.size, e.data), ~(head - data));
         head += e.size;
     }
 
