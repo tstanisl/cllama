@@ -17,7 +17,7 @@ typedef enum {
 ctokenizer_h ctokenizer_init(
     ctokenizer_type_e type,
     int n_tokens,
-    ctokenizer_entry_s get(void*, int), void * priv
+    ctokenizer_entry_s next_token(void*), void * next_token_ctx
 );
 
 void ctokenizer_drop(ctokenizer_h);

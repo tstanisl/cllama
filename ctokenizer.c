@@ -2,6 +2,7 @@
 
 #include "cutils.h"
 #include "hmap.h"
+#include "ibuf.h"
 
 typedef struct {
     u32 a, b, t;
@@ -14,42 +15,11 @@ typedef struct ctokenizer {
     merge_s * merge;
 } ctokenizer_s;
 
-typedef struct {
-    void * data;
-    size_t used;
-    size_t left;
-} ibuf_s;
-
-#define IBUF_INIT (ibuf){0}
-
-static void * ibuf_grow(ibuf_s * ib, size_t grow) {
-    char * data = ib->data;
-    if (ib->left < grow) {
-        size_t size = ib->used + grow;
-        size += size / 2;
-        data = realloc(data, size);
-        if (ERR_ON(!data, "realloc"))
-            return 0;
-        ib->data = data;
-        ib->left = new_size - ib->used;
-    }
-    void * ptr = data + ib->used;
-    ib->used += grow;
-    ib->left -= grow;
-    return ptr;
-}
-
-static void * ibuf_drop(ibuf_s * ib) {
-    void * data = ib->data;
-    *ib = (ibuf_s){ 0 };
-    return data;
-}
-
-static u64 strhash(u32 len, const char str[len]) {
+static u32 strhash(u32 len, const char str[len]) {
     // FNV hash
-    u64 hash = 0xcbf29ce484222325;
+    u32 hash = 0x811c9dc5;
     for (u32 i = 0; i < len; ++i) {
-        hash *= 0x00000100000001b3;
+        hash *= 0x01000193;
         hash ^= str[i];
     }
     return hash;
@@ -74,32 +44,31 @@ static u32 hash2x32(u32 a, u32 b) {
 ctokenizer_h ctokenizer_init(
     ctokenizer_type_e type,
     int n_tokens,
-    ctokenizer_entry_s get(void*, int), void * priv
+    ctokenizer_entry_s next_token(void*, int), void * next_token_ctx
 ) {
-    size_t size = 0;
-    for (int i = 0; i < n_tokens; ++i)
-        size += sizeof(token_s) + get(priv, i).size;
-
     ctokenizer_s t = {
-        .data  = malloc(size),
         .start = calloc(n_tokens + 1, sizeof *t.start),
     };
     ctokenizer_s * res = malloc(sizeof *res);
     hmap_h hm = 0;
     ibuf_s ib = IBUF_INIT;
 
-    if (ERR_ON(!t.data || !t.start || !res, "malloc"))
+    if (ERR_ON(!t.start || !res, "malloc"))
         goto fail;
 
-    char * head = t->data;
+    u32 head = 0;
     for (int i = 0; i < n_tokens; ++i) {
-        ctokenizer_entry_s e = get(priv, i);
+        ctokenizer_entry_s e = next_token(next_token_ctx);
+        char * data = ibuf_grow(&ib, e.size);
+        if (ERR_ON(!data, "ibuf_grow"))
+            goto fail;
         // todo: handle byte-tokens
-        memcpy(head, e.data, e.size);
-        t.start[i] = head - t.data;
+        memcpy(data, e.data, e.size);
+        t.start[i] = head;
         head += e.size;
     }
-    start[n_tokens] = head; // sentinel
+    t.start[n_tokens] = head; // sentinel
+    t.data = ibuf_drop(&ib);
 
     hm = hmap_init(n_tokens, hash_token, &t);
     if (ERR_ON(!hm, "hmap_init"))
@@ -150,37 +119,3 @@ void ctokenizer_drop(ctokenizer_h t) {
     *t = (ctokenizer_s) { 0 };
 }
 
-
-#if 0
-static int tmap_init(tmap_s * tm, u32 n_slots) {
-    u32 mask;
-    for (mask = 1; 2 * mask < n_slots; mask = 2 * mask + 1);
-    u32 * tpos = calloc(mask + 1, sizeof *tpos);
-    if (ERR_ON(!tpos, "malloc"))
-        return -1;
-    tm->mask = mask;
-    tm->tpos = tpos;
-    return 0;
-}
-
-static void tmap_insert(tmap_s * tm, u32 size, char data[size]) {
-    u32 slot = strhash(size, data);
-    for (u32 step = 1; tmap[slot & mask]; slot += step, step += 2);
-    tm.slot[slot & mask] = ;
-}
-
-static u32 tmap_search(tmap_s * tm, u32 size, char data[size]) {
-    u32 slot = strhash(size, data);
-    for (u32 step = 1; tmap[slot & mask]; slot += step, step += 2);
-    return slot & mask;
-}
-
-static u32 next_power_of_2(u32 x) {
-    x |= x >> 1;
-    x |= x >> 2;
-    x |= x >> 4;
-    x |= x >> 8;
-    x |= x >> 16;
-    return x + 1;
-}
-#endif
