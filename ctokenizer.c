@@ -172,9 +172,9 @@ ctokenizer_h ctokenizer_init(
     // mapping from string to token is no longer needed
     hmap_drop(hm);
     hm = 0;
-#if 0
+#if 1
     // reuse hm for mapping merges
-    t.hm = hmap_init(n_merges, hash_merge, 0);
+    t.hm = hmap_init(n_merges, hash_merge, &t);
     if (ERR_ON(!t.hm, "hmap_init"))
         goto fail;
 #endif
@@ -195,6 +195,6 @@ void ctokenizer_drop(ctokenizer_h t) {
     free(t->data);
     free(t->start);
     free(t->merge);
-    *t = (ctokenizer_s) { 0 };
+    free(t);
 }
 
