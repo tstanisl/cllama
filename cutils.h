@@ -15,7 +15,7 @@ static void msg_(const char * fname, int line, const char * level, const char * 
     fputc('\n', stderr);
 }
 
-#define ERR(...) msg_(__FILE__, __LINE__, "error", __VA_ARGS__)
+#define ERR(...) msg_(__FILE__, __LINE__, "error" __VA_OPT__(,) __VA_ARGS__, "")
 #define ERR_ON(cnd, ...) (cnd ? ERR(__VA_ARGS__), 1 : 0)
 #define ERRSTR strerror(errno)
 

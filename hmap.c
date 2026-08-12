@@ -9,14 +9,19 @@ typedef struct hmap {
 hmap_h hmap_init(uint32_t size, uint32_t hash_cb(uint32_t, const void*), const void *ctx) {
     u32 mask;
     for (mask = 1; 3 * size / 2 >= mask; mask = 2 * mask + 1);
+    //printf("size=%u mask=%u\n", size, mask);
     hmap_s * hm = calloc(1, sizeof *hm + (mask + 1) * sizeof hm->data[0]);
     if (ERR_ON(!hm, "malloc"))
         return 0;
     hm->mask = mask;
     u32 * data = hm->data;
     for (u32 i = 0; i < size; ++i) {
+        //printf("  insert %u:", i);
         u32 pos = hash_cb(i, ctx) & mask;
-        for (u32 step = 1; data[pos]; pos = (pos + step) & mask, step += 2);
+        for (u32 step = 1; data[pos]; pos = (pos + step++) & mask)
+            ;
+            //printf(" %u", pos);
+        //printf(" %u\n", pos);
         data[pos] = ~i;
     }
     return hm;
@@ -30,9 +35,11 @@ uint32_t hmap_search(hmap_h hm, uint32_t hash, _Bool test(uint32_t, const void*)
     u32 mask = hm->mask;
     u32 * data = hm->data;
     u32 pos = hash & mask;
-    for (u32 step = 1; data[pos]; pos = (pos + step) & mask, step += 2)
-        if (test(pos, ctx))
-            return ~data[pos];
+    for (u32 step = 1; data[pos]; pos = (pos + step++) & mask) {
+        u32 idx = ~data[pos];
+        if (test(idx, ctx))
+            return idx;
+    }
     return -1;
 }
 

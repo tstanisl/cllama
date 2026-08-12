@@ -1,7 +1,30 @@
 #include "cgguf.h"
+#include "ctokenizer.h"
 #include "cutils.h"
 
 #include <assert.h>
+#include <inttypes.h>
+
+ctokenizer_entry_s next_token(void * arr_) {
+    cgguf_val_u v;
+    cgguf_read_val(arr_, &v);
+    return (ctokenizer_entry_s) { v.str.data, v.str.size };
+}
+
+void test_tokenizer(cgguf_keyval_s kv) {
+    // TODO: add a few asserts
+    cgguf_arr_s arr = kv.val.arr;
+    ctokenizer_h t = ctokenizer_init(
+        CTOKENIZER_TYPE_GPT2,
+        arr.left,
+        next_token,
+        &arr
+    );
+    if (ERR_ON(!t))
+        abort();
+
+    ctokenizer_drop(t);
+}
 
 int main(int argc, char * argv[argc + 1]) {
     if (ERR_ON(argc != 2, "Missing path to GGUF model"))
@@ -16,7 +39,12 @@ int main(int argc, char * argv[argc + 1]) {
                (int)kv.type);
         if (kv.type == CGGUF_TYPE_STRING)
             printf("\t%.*s\n", (int)kv.val.str.size, kv.val.str.data);
+        if (kv.type == CGGUF_TYPE_ARRAY)
+            printf("\tsize=%" PRIu64 "\n", kv.val.arr.left);
         #if 1
+        if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens")) {
+            test_tokenizer(kv);
+        }
         static const char* arrays[] = {
             "general.languages",
             "general.tags",
