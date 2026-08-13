@@ -5,6 +5,7 @@
 #include "ibuf.h"
 
 #include <assert.h>
+#include <limits.h>
 
 typedef struct {
     u32 a, b, t;
@@ -85,6 +86,17 @@ static uint32_t hash_merge(uint32_t idx, const void* t_) {
     const ctokenizer_s * t = t_;
     merge_s m = t->merge[idx];
     return hash2x32(m.a, m.b);
+}
+
+typedef struct {
+    merge_s * merge;
+    u32 a, b;
+} test_merge_ctx_s;
+
+static _Bool test_merge(uint32_t idx, const void* ctx_) {
+    const test_merge_ctx_s * ctx = ctx_;
+    merge_s m = ctx->merge[idx];
+    return m.a == ctx->a && m.b == ctx->b;
 }
 
 ctokenizer_h ctokenizer_init(
@@ -214,5 +226,36 @@ void ctokenizer_drop(ctokenizer_h t) {
     free(t->start);
     free(t->merge);
     free(t);
+}
+
+size_t ctokenizer_encode(ctokenizer_h t,
+    size_t len, const char str[len],
+    int tokens[len]
+) {
+    for (size_t i = 0; i < len; ++i)
+        tokens[i] = t->direct[i];
+    for (;;) {
+        size_t best_pos = len;
+        int best_token = INT_MAX;
+        for (size_t i = 0; i + 1 < len; ++i) {
+            int a = tokens[i];
+            int b = tokens[i + 1];
+            test_token_ctx_s ctx = { t->merge, a, b };
+            u32 midx = hmap_search(t->hm, hash2x32(a, b), test_merge, &ctx);
+            if (midx == HMAP_NONE) continue;
+            merge_s m = t->merge[midx];
+            if (m.t < best_token) {
+                best_token = m.t;
+                best_pos = i;
+            }
+        }
+        if (best_token == INT_MAX)
+            break;
+        tokens[best_pos] = best_token;
+        for (size_t j = best_pos + 2; j < len; ++j)
+            tokens[j - 1] = tokens[j];
+        --len;
+    }
+    return len;
 }
 

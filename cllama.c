@@ -23,6 +23,12 @@ void test_tokenizer(cgguf_keyval_s kv) {
     if (ERR_ON(!t))
         abort();
 
+    char txt[] = "hello world";
+    int tokens[sizeof txt];
+
+    int len = ctokenizer_encode(&t, sizeof txt - 1, txt, tokens);
+    printf("len=%d\n", len);
+
     ctokenizer_drop(t);
 }
 
