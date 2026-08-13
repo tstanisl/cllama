@@ -41,15 +41,15 @@ int main(int argc, char * argv[argc + 1]) {
             printf("\t%.*s\n", (int)kv.val.str.size, kv.val.str.data);
         if (kv.type == CGGUF_TYPE_ARRAY)
             printf("\tsize=%" PRIu64 "\n", kv.val.arr.left);
-        #if 1
         if (cgguf_strequal(kv.key, "tokenizer.ggml.tokens")) {
             test_tokenizer(kv);
         }
+        #if 1
         static const char* arrays[] = {
             "general.languages",
             "general.tags",
             "tokenizer.ggml.tokens",
-            "tokenizer.ggml.merges",
+            //"tokenizer.ggml.merges",
             0
         };
         for (int j = 0; arrays[j]; ++j)

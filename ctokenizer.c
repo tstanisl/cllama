@@ -16,6 +16,7 @@ typedef struct ctokenizer {
     u32     * start;
     merge_s * merge;
     hmap_h    hm;
+    int       direct[256];
 } ctokenizer_s;
 
 static u32 strhash(u32 len, const char str[len]) {
@@ -128,12 +129,37 @@ ctokenizer_h ctokenizer_init(
     if (ERR_ON(!hm, "hmap_init"))
         goto fail;
 
+    int n_unsafe = 0;
+    //int n_safe = 0;
+    for (int i = 0; i < 256; ++i) {
+        char txt[3] = { 0 };
+        // check if byte is unsafe
+        if ((i <= 32) || (127 <= i && i <= 160) || i == 173) {
+            int unicode = 0x100 + n_unsafe++;
+            txt[0] = 0xc0 + (unicode >> 6);
+            txt[1] = 0x80 + (unicode & 63);
+        } else if (i >= 0x80) {
+            int unicode = i;
+            txt[0] = 0xc0 + (unicode >> 6);
+            txt[1] = 0x80 + (unicode & 63);
+        } else {
+            txt[0] = i;
+        }
+        //printf("\ttok[%3d] = %s (%d,%d)", i, txt, (u8)txt[0], (u8)txt[1]);
+        u32 tok = find_token(&t, hm, strlen(txt), txt);
+        if (ERR_ON(tok == HMAP_NONE, "no token for byte %d", i))
+            break;
+            //goto fail;
+        t.direct[i] = tok;
+        //printf(" -> %d: %.*s\n", (int)tok, t.start[tok + 1] - t.start[tok], t.data + t.start[tok]);
+    }
+
     u32 n_merges = 0;
     for (int i = 0; i < n_tokens; ++i) {
         char * data = t.data + t.start[i];
         u32    size = t.start[i + 1] - t.start[i];
-        printf("split %5d: %.*s:\n", i, (int)size, data);
         #if 0
+        printf("split %5d: %.*s:\n", i, (int)size, data);
         // sanity check
         int idx = find_token(&t, hm, size, data);
         printf(" idx=%d", idx);
@@ -141,32 +167,24 @@ ctokenizer_h ctokenizer_init(
         assert(idx == i);
         #endif
         for (u32 p = 1; p < size; ++p) {
-            test_token_ctx_s a_ctx = {
-                .entry = { data, p },
-                .data = t.data, .start = t.start
-            };
-            u32 a = hmap_search(hm, strhash(p, data),
-                                test_token, &a_ctx);
+            u32 a = find_token(&t, hm, p, data);
             if (a == HMAP_NONE) continue;
-            test_token_ctx_s b_ctx = {
-                .entry = { data + p, size - p},
-                .data = t.data, .start = t.start
-            };
-            u32 b = hmap_search(hm, strhash(size - p, data + p),
-                                test_token, &b_ctx);
+            u32 b = find_token(&t, hm, size - p, data + p);
             if (b == HMAP_NONE) continue;
             merge_s * m = ibuf_grow(&ib, sizeof *m);
             if (ERR_ON(!m, "ibuf_grow"))
                 goto fail;
             *m = (merge_s) { a, b, i };
+            /*
             printf("\t(%u,%u) '%.*s %.*s' -> %.*s\n", a, b,
                    (int)p, data, (int)(size-p), data+p,
                    (int)size, data);
+            */
             ++n_merges;
         }
         //puts("");
     }
-    printf("n_merges=%u\n", n_merges);
+    //printf("n_merges=%u\n", n_merges);
     t.merge = ibuf_drop(&ib);
 
     // mapping from string to token is no longer needed
