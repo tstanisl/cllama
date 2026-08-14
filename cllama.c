@@ -26,19 +26,18 @@ void test_tokenizer(cgguf_keyval_s kv) {
     //char txt[] = "zażółć gęślą jaźń"; //hello world";
     char txt[] = "Once upon a time, you'll die. But John is happy.";
     int test[sizeof txt];
-    int gold[] = {12805, 5304, 264, 892, 11, 499, 3358, 2815, 13, 2030, 3842, 374, 6380, 13};
 
-    printf("len=%d\n", (int)sizeof txt - 1);
+    printf("len=%d %s\n", (int)sizeof txt - 1, txt);
     int len = ctokenizer_encode(t, sizeof txt - 1, txt, test);
     printf("len=%d\n", len);
+    char dec[1024];
+    size_t n_chars = ctokenizer_decode(t, len, test, sizeof dec, dec);
+    printf("decoded: %.*s\n", (int)n_chars, dec);
+
+    int gold[] = {12805, 5304, 264, 892, 11, 499, 3358, 2815, 13, 2030, 3842, 374, 6380, 13};
     assert(len == ARRAY_SIZE(gold));
     for (int i = 0; i < len; ++i)
         assert(test[i] == gold[i]);
-
-    char dec[1024];
-    size_t n_chars = ctokenizer_decode(t, len, test, sizeof dec, dec);
-
-    printf("decoded: %.*s\n", (int)n_chars, dec);
 
     ctokenizer_drop(t);
 }

@@ -160,7 +160,7 @@ ctokenizer_h ctokenizer_init(
             int unicode = 0x100 + t.n_unsafe;
             txt[0] = 0xc0 + (unicode >> 6);
             txt[1] = 0x80 + (unicode & 63);
-            printf("n_unsafe=%u\n", t.n_unsafe);
+            //printf("n_unsafe=%u\n", t.n_unsafe);
             assert(t.n_unsafe <= (int)sizeof t.unsafe);
             t.unsafe[t.n_unsafe++] = i;
         } else if (i >= 0x80) {
@@ -245,10 +245,11 @@ size_t ctokenizer_encode(ctokenizer_h t,
     size_t len, const char str[len],
     int tokens[len]
 ) {
-    printf("str='%.*s'\n", (int)len, str);
+    //printf("str='%.*s'\n", (int)len, str);
     for (size_t i = 0; i < len; ++i)
         tokens[i] = t->direct[(u8)str[i]];
     for (;;) {
+        #if 1
         for (size_t i = 0; i < len; ++i) {
             int tok = tokens[i];
             size_t tsize = t->start[tok + 1] - t->start[tok];
@@ -256,6 +257,7 @@ size_t ctokenizer_encode(ctokenizer_h t,
             printf(" %d:%.*s", tok, (int)tsize, tdata);
         }
         puts("");
+        #endif
         size_t best_pos = len;
         u32 best_token = HMAP_NONE;
         for (size_t i = 0; i + 1 < len; ++i) {
@@ -305,11 +307,14 @@ size_t ctokenizer_decode(
             //printf("\t%c c1=%d\n", c1, c1);
             if (0x80 <= c1 && c1 < 0xc0) {
                 int u = ((c0 & 0x1f) << 6) + (c1 & 0x3f);
-                //printf("\t\tu=%d\n", u);
+                //printf("\tu=%d\n", u);
                 if (0x100 <= u && u < 0x100 + t->n_unsafe) {
                     c0 = t->unsafe[u - 0x100];
-                    ++i;
+                } else {
+                    c0 = u;
                 }
+                //printf("\tc0=%d, %c\n", c0, c0);
+                ++i;
             }
         }
         buf[j++] = c0;
