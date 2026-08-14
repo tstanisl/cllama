@@ -36,3 +36,5 @@ typedef   double f64;
 
 #define container_of(PTR, TYPE, MEMBER) \
     ((TYPE*)((char*)(1 ? (PTR) : &((TYPE*)0)->MEMBER) - offsetof(TYPE, MEMBER)))
+
+#define ARRAY_SIZE(...) (sizeof(__VA_ARGS__) / sizeof 0[__VA_ARGS__])
