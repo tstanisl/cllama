@@ -44,7 +44,7 @@ static uint32_t hash_token(uint32_t idx, const void* t_) {
 
 typedef struct {
     ctokenizer_entry_s entry;
-    char * data;
+    const char * data;
     u32 * start;
 } test_token_ctx_s;
 
@@ -89,7 +89,7 @@ static uint32_t hash_merge(uint32_t idx, const void* t_) {
 }
 
 typedef struct {
-    merge_s * merge;
+    const merge_s * merge;
     u32 a, b;
 } test_merge_ctx_s;
 
@@ -232,15 +232,23 @@ size_t ctokenizer_encode(ctokenizer_h t,
     size_t len, const char str[len],
     int tokens[len]
 ) {
+    printf("str='%.*s'\n", (int)len, str);
     for (size_t i = 0; i < len; ++i)
-        tokens[i] = t->direct[i];
+        tokens[i] = t->direct[(u8)str[i]];
     for (;;) {
+        for (size_t i = 0; i < len; ++i) {
+            int tok = tokens[i];
+            size_t tsize = t->start[tok + 1] - t->start[tok];
+            char * tdata = t->data + t->start[tok];
+            printf(" %d:%.*s", tok, (int)tsize, tdata);
+        }
+        puts("");
         size_t best_pos = len;
-        int best_token = INT_MAX;
+        u32 best_token = HMAP_NONE;
         for (size_t i = 0; i + 1 < len; ++i) {
-            int a = tokens[i];
-            int b = tokens[i + 1];
-            test_token_ctx_s ctx = { t->merge, a, b };
+            u32 a = tokens[i];
+            u32 b = tokens[i + 1];
+            test_merge_ctx_s ctx = { t->merge, a, b };
             u32 midx = hmap_search(t->hm, hash2x32(a, b), test_merge, &ctx);
             if (midx == HMAP_NONE) continue;
             merge_s m = t->merge[midx];
@@ -249,9 +257,9 @@ size_t ctokenizer_encode(ctokenizer_h t,
                 best_pos = i;
             }
         }
-        if (best_token == INT_MAX)
+        if (best_token == HMAP_NONE)
             break;
-        tokens[best_pos] = best_token;
+        tokens[best_pos] = (int)best_token;
         for (size_t j = best_pos + 2; j < len; ++j)
             tokens[j - 1] = tokens[j];
         --len;

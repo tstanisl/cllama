@@ -23,10 +23,11 @@ void test_tokenizer(cgguf_keyval_s kv) {
     if (ERR_ON(!t))
         abort();
 
-    char txt[] = "hello world";
+    //char txt[] = "zażółć gęślą jaźń"; //hello world";
+    char txt[] = "Once upon a time, you'll die. But John is happy.";
     int tokens[sizeof txt];
 
-    int len = ctokenizer_encode(&t, sizeof txt - 1, txt, tokens);
+    int len = ctokenizer_encode(t, sizeof txt - 1, txt, tokens);
     printf("len=%d\n", len);
 
     ctokenizer_drop(t);
@@ -54,7 +55,7 @@ int main(int argc, char * argv[argc + 1]) {
         static const char* arrays[] = {
             "general.languages",
             "general.tags",
-            "tokenizer.ggml.tokens",
+            //"tokenizer.ggml.tokens",
             //"tokenizer.ggml.merges",
             0
         };
