@@ -22,5 +22,5 @@ ctokenizer_h ctokenizer_init(
 
 void ctokenizer_drop(ctokenizer_h);
 size_t ctokenizer_encode(ctokenizer_h, size_t len, const char str[len], int tokens[len]);
-size_t ctokenizer_decode(ctokenizer_h, size_t len, const int tokens[len], int max_chars, char buf[restrict max_chars]);
+size_t ctokenizer_decode(ctokenizer_h, size_t len, const int tokens[len], size_t max_chars, char buf[restrict max_chars]);
 

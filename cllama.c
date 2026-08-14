@@ -35,6 +35,11 @@ void test_tokenizer(cgguf_keyval_s kv) {
     for (int i = 0; i < len; ++i)
         assert(test[i] == gold[i]);
 
+    char dec[1024];
+    size_t n_chars = ctokenizer_decode(t, len, test, sizeof dec, dec);
+
+    printf("decoded: %.*s\n", (int)n_chars, dec);
+
     ctokenizer_drop(t);
 }
 

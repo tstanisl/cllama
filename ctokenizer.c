@@ -18,7 +18,17 @@ typedef struct ctokenizer {
     merge_s * merge;
     hmap_h    hm;
     int       direct[256];
+    int       n_unsafe;
+    char      unsafe[256];
 } ctokenizer_s;
+
+static inline const char * tokstr(ctokenizer_s * t, int tok) {
+    return t->data + t->start[tok];
+}
+
+static inline size_t toklen(ctokenizer_s * t, int tok) {
+    return t->start[tok + 1] - t->start[tok];
+}
 
 static u32 strhash(u32 len, const char str[len]) {
     // FNV hash
@@ -141,15 +151,18 @@ ctokenizer_h ctokenizer_init(
     if (ERR_ON(!hm, "hmap_init"))
         goto fail;
 
-    int n_unsafe = 0;
+    t.n_unsafe = 0;
     //int n_safe = 0;
     for (int i = 0; i < 256; ++i) {
         char txt[3] = { 0 };
         // check if byte is unsafe
         if ((i <= 32) || (127 <= i && i <= 160) || i == 173) {
-            int unicode = 0x100 + n_unsafe++;
+            int unicode = 0x100 + t.n_unsafe;
             txt[0] = 0xc0 + (unicode >> 6);
             txt[1] = 0x80 + (unicode & 63);
+            printf("n_unsafe=%u\n", t.n_unsafe);
+            assert(t.n_unsafe <= (int)sizeof t.unsafe);
+            t.unsafe[t.n_unsafe++] = i;
         } else if (i >= 0x80) {
             int unicode = i;
             txt[0] = 0xc0 + (unicode >> 6);
@@ -265,5 +278,42 @@ size_t ctokenizer_encode(ctokenizer_h t,
         --len;
     }
     return len;
+}
+
+size_t ctokenizer_decode(
+    ctokenizer_h t,
+    size_t len, const int tokens[len],
+    size_t max_chars, char buf[restrict max_chars]
+) {
+    //size_t left = max_chars;
+    size_t p = 0;
+    for (size_t i = 0; i < len; ++i) {
+        int tok = tokens[i];
+        size_t tlen = toklen(t, tok);
+        if (tlen >= max_chars - p)
+            break;
+        memcpy(buf + p, tokstr(t, tok), tlen);
+        p += tlen;
+    }
+    // replace unicode in dangerous range with bytes
+    size_t j = 0;
+    for (size_t i = 0; i < p; ++i) {
+        int c0 = (u8)buf[i];
+        //printf("%c c0=%d\n", c0, c0);
+        if (0xc0 <= c0 && c0 < 0xe0 && i + 1 < p) {
+            int c1 = (u8)buf[i + 1];
+            //printf("\t%c c1=%d\n", c1, c1);
+            if (0x80 <= c1 && c1 < 0xc0) {
+                int u = ((c0 & 0x1f) << 6) + (c1 & 0x3f);
+                //printf("\t\tu=%d\n", u);
+                if (0x100 <= u && u < 0x100 + t->n_unsafe) {
+                    c0 = t->unsafe[u - 0x100];
+                    ++i;
+                }
+            }
+        }
+        buf[j++] = c0;
+    }
+    return j;
 }
 
